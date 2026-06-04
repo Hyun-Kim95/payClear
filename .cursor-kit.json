@@ -1,0 +1,26 @@
+{
+  "kitPath": "vendor/cursor-workspace-kit",
+  "kitRepoMode": "submodule",
+  "remote": "origin",
+  "branch": "main",
+  "channel": "A",
+  "harness": {
+    "shellGuard": {
+      "mode": "block",
+      "patternsFile": ".cursor/hooks/guard-shell.patterns.json",
+      "logPath": ".cursor/state/shell-guard.log"
+    },
+    "qualityGate": {
+      "mode": "off",
+      "configFile": ".cursor/quality-gate.json",
+      "runOn": ["afterAgentResponse"],
+      "stateFile": ".cursor/state/quality-gate-last.json"
+    },
+    "devServerCleanup": {
+      "mode": "kill",
+      "registryFile": ".cursor/state/agent-dev-servers.json",
+      "keepFile": ".cursor/state/dev-server-keep.json",
+      "logPath": ".cursor/state/dev-server-cleanup.log"
+    }
+  }
+}

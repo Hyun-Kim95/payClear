@@ -1,0 +1,3 @@
+[submodule "vendor/cursor-workspace-kit"]
+	path = vendor/cursor-workspace-kit
+	url = https://github.com/Hyun-Kim95/cursor-workspace-kit.git

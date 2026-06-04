@@ -1,0 +1,41 @@
+﻿{
+    "version":  1,
+    "hooks":  {
+                  "beforeSubmitPrompt":  [
+                                             {
+                                                 "matcher":  "UserPromptSubmit",
+                                                 "command":  "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/kit-start-on-prompt.ps1",
+                                                 "timeout":  120
+                                             }
+                                         ],
+                  "beforeShellExecution":  [
+                                               {
+                                                   "command":  "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/guard-shell.ps1",
+                                                   "timeout":  10
+                                               }
+                                           ],
+                  "afterShellExecution":  [
+                                              {
+                                                  "matcher":  "npm run dev|pnpm dev|yarn dev|next dev|vite|uvicorn|flask run|ng serve|expo start",
+                                                  "command":  "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/dev-server-harness.ps1",
+                                                  "timeout":  15
+                                              }
+                                          ],
+                  "afterAgentResponse":  [
+                                             {
+                                                 "command":  "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/dev-server-harness.ps1",
+                                                 "timeout":  15
+                                             },
+                                             {
+                                                 "command":  "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/quality-gate.ps1",
+                                                 "timeout":  25
+                                             }
+                                         ],
+                  "stop":  [
+                               {
+                                   "command":  "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/dev-server-harness.ps1",
+                                   "timeout":  30
+                               }
+                           ]
+              }
+}

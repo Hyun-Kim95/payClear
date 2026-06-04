@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "patterns": [
+    {
+      "id": "git-add-all",
+      "regex": "(?i)\\bgit\\s+add\\s+(-A|--all|\\.)\\b",
+      "message": "BLOCKED: git add -A / . / --all is not allowed. Stage files by explicit path.",
+      "severity": "block"
+    },
+    {
+      "id": "git-push-force",
+      "regex": "(?i)\\bgit\\s+push\\b.*(--force|-f)\\b",
+      "message": "BLOCKED: force push is not allowed without explicit user approval.",
+      "severity": "block"
+    },
+    {
+      "id": "rm-rf",
+      "regex": "(?i)\\brm\\s+-rf\\b|Remove-Item\\b[^\\n]*-Recurse[^\\n]*-Force",
+      "message": "BLOCKED: recursive force delete is risky. Narrow the path or get user confirmation.",
+      "severity": "block"
+    },
+    {
+      "id": "git-reset-hard",
+      "regex": "(?i)\\bgit\\s+reset\\s+--hard\\b",
+      "message": "BLOCKED: git reset --hard is not allowed without explicit user approval.",
+      "severity": "block"
+    }
+  ]
+}
