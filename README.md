@@ -22,9 +22,18 @@
 ## 개발 상태
 
 - **기획:** PRD v0.2.4 **승인됨** (2026-06-04)
-- **문서:** 초기 문서 세트 v0.1.1
-- **다음:** 단계 2 이중 목업(자체 + Stitch) → Gate 2 → 구현
-- **구현:** 미착수
+- **디자인:** **Stitch(B) 선택** (2026-06-05)
+- **인프라:** **SNS OAuth + 로컬 PostgreSQL** — [ADR-002](./docs/decisions/ADR-002-sns-auth-local-postgres.md) (Supabase 미사용)
+- **구현:** Gate 2 — `apps/web`, `apps/api` (SQLite 프로토타입 → Postgres 전환 예정)
+- **목업(참고):** [mock-internal](./mock-internal/) — 2A
+
+```bash
+# 프론트 (Stitch 토큰 적용)
+cd apps/web && npm install && npm run dev
+
+# API (로컬)
+cd apps/api && npm install && npm run dev
+```
 
 ## 전제
 

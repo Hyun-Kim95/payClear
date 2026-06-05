@@ -1,0 +1,996 @@
+import Fastify from 'fastify'
+import cors from '@fastify/cors'
+import { randomBytes, randomUUID } from 'crypto'
+import 'dotenv/config'
+import { pingDb, query, queryOne } from './db/pool.js'
+import { runMigrations } from './db/migrate.js'
+import { seedDemo } from './db/seed.js'
+import {
+  createContact,
+  formatPgDate,
+  getDebtRow,
+  getLedger,
+  refreshDebtStatus,
+} from './debt-helpers.js'
+import {
+  computeBalance,
+  computeDisplayLabel,
+  deriveStatus,
+  isOverdue,
+  type DebtRow,
+  type LedgerRow,
+} from './domain.js'
+import {
+  validateAdjustmentAmount,
+  validateAdjustmentNote,
+  validateDateOnOrBeforeToday,
+  validatePaymentAmount,
+  validatePrincipal,
+  validateReason,
+  validationError,
+} from './validate.js'
+import { resolveUserId } from './auth/jwt.js'
+import {
+  createOAuthState,
+  googleAuthUrl,
+  handleGoogleCallback,
+  handleKakaoCallback,
+  kakaoAuthUrl,
+  redirectWithError,
+  redirectWithToken,
+  verifyOAuthState,
+} from './auth/oauth.js'
+import {
+  buildPublicShareView,
+  createShareToken,
+  getActiveShareForDebt,
+  revokeActiveForDebt,
+  revokeShareForDebt,
+  toShareResponse,
+} from './share-helpers.js'
+import {
+  getSecurityState,
+  setAppPin,
+  updateLockTimeout,
+  verifyAppPin,
+} from './security-helpers.js'
+import { runDueReminders } from './notify/send.js'
+
+await runMigrations()
+await seedDemo()
+
+const app = Fastify({ logger: true })
+await app.register(cors, { origin: true })
+
+type AuthedRequest = { userId: string }
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const EMAIL_VERIFY_DEV =
+  process.env.EMAIL_VERIFY_DEV === 'true' || process.env.ALLOW_DEV_TOKEN !== 'false'
+
+function mapDebt(row: DebtRow, ledger: LedgerRow[]) {
+  const balance = computeBalance(row.principal, ledger)
+  const status = deriveStatus(row.status, !!row.agreement_closed, balance)
+  const display_label = computeDisplayLabel(status, !!row.agreement_closed, balance)
+  return {
+    id: row.id,
+    contact_id: row.contact_id,
+    contact: { display_name: row.contact_name },
+    direction: row.direction,
+    principal: row.principal,
+    occurred_on: row.occurred_on,
+    reason: row.reason,
+    due_on: row.due_on,
+    status,
+    agreement_closed: !!row.agreement_closed,
+    balance,
+    display_label,
+    is_overdue: isOverdue(row.due_on, status, balance),
+    archived_at: row.archived_at,
+    completed_at: row.completed_at,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }
+}
+
+async function mapDebtAsync(row: DebtRow) {
+  const ledger = await getLedger(row.id)
+  return mapDebt(row, ledger)
+}
+
+function archivedError() {
+  return { error: { code: 'DEBT_ARCHIVED', message: '보관된 채무는 수정할 수 없습니다.' } }
+}
+
+app.addHook('onRequest', async (req, reply) => {
+  const path = req.url.split('?')[0]
+  if (
+    path.startsWith('/api/v1/public/') ||
+    path.startsWith('/api/v1/auth/') ||
+    path === '/api/v1/health'
+  ) {
+    return
+  }
+  const userId = await resolveUserId(req.headers.authorization)
+  if (!userId) {
+    return reply.status(401).send({ error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다.' } })
+  }
+  ;(req as AuthedRequest).userId = userId
+})
+
+app.get('/api/v1/health', async () => ({ ok: true, db: await pingDb() }))
+
+app.get('/api/v1/me', async (req) => {
+  const { userId } = req as AuthedRequest
+  const user = await queryOne<{
+    id: string
+    email: string | null
+    email_verified_at: string | null
+  }>('SELECT id, email, email_verified_at FROM users WHERE id = $1', [userId])
+  const providers = await query<{ provider: string }>(
+    'SELECT provider FROM oauth_accounts WHERE user_id = $1',
+    [userId],
+  )
+  return {
+    id: user!.id,
+    email: user!.email,
+    email_verified_at: user!.email_verified_at,
+    email_verified: !!user!.email_verified_at,
+    providers: providers.rows.map((r) => r.provider),
+  }
+})
+
+app.post<{ Body: { email: string } }>('/api/v1/me/email', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const email = req.body?.email?.trim().toLowerCase()
+  if (!email || !EMAIL_RE.test(email)) {
+    return reply.status(400).send(validationError({ email: '올바른 이메일을 입력해 주세요.' }))
+  }
+  const token = randomBytes(24).toString('hex')
+  const expires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+  await query(
+    `UPDATE users SET email = $1, email_verified_at = NULL,
+     email_verify_token = $2, email_verify_expires_at = $3, updated_at = NOW() WHERE id = $4`,
+    [email, token, expires, userId],
+  )
+  const payload: Record<string, unknown> = { ok: true, message: '인증 메일을 확인해 주세요.' }
+  if (EMAIL_VERIFY_DEV) {
+    payload.dev_verify_token = token
+    console.log(`[EMAIL_VERIFY_DEV] user=${userId} token=${token}`)
+  }
+  return payload
+})
+
+app.post<{ Body: { token: string } }>('/api/v1/me/email/verify', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const token = req.body?.token?.trim()
+  if (!token) {
+    return reply.status(400).send(validationError({ token: '인증 토큰이 필요합니다.' }))
+  }
+  const user = await queryOne<{
+    email_verify_token: string | null
+    email_verify_expires_at: string | null
+  }>(
+    'SELECT email_verify_token, email_verify_expires_at FROM users WHERE id = $1',
+    [userId],
+  )
+  if (!user?.email_verify_token || user.email_verify_token !== token) {
+    return reply.status(400).send({
+      error: { code: 'VALIDATION_ERROR', message: '인증 토큰이 올바르지 않습니다.' },
+    })
+  }
+  if (user.email_verify_expires_at && new Date(user.email_verify_expires_at) < new Date()) {
+    return reply.status(400).send({
+      error: { code: 'VALIDATION_ERROR', message: '인증 토큰이 만료되었습니다.' },
+    })
+  }
+  await query(
+    `UPDATE users SET email_verified_at = NOW(), email_verify_token = NULL,
+     email_verify_expires_at = NULL, updated_at = NOW() WHERE id = $1`,
+    [userId],
+  )
+  return { ok: true }
+})
+
+app.get('/api/v1/me/security', async (req) => {
+  const { userId } = req as AuthedRequest
+  return getSecurityState(userId)
+})
+
+app.post<{ Body: { pin: string; current_pin?: string } }>(
+  '/api/v1/me/security/pin',
+  async (req, reply) => {
+    const { userId } = req as AuthedRequest
+    const result = await setAppPin(userId, req.body?.pin ?? '', req.body?.current_pin)
+    if (!result.ok) {
+      return reply.status(400).send({ error: { code: result.code, message: result.message } })
+    }
+    return { ok: true }
+  },
+)
+
+app.post<{ Body: { pin: string } }>('/api/v1/me/security/verify-pin', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const result = await verifyAppPin(userId, req.body?.pin ?? '')
+  if (!result.ok) {
+    const status = result.code === 'APP_PIN_LOCKED' ? 429 : 401
+    return reply.status(status).send({
+      error: { code: result.code, message: result.message, remaining: result.remaining },
+    })
+  }
+  return { ok: true }
+})
+
+app.patch<{ Body: { lock_timeout_minutes: number } }>('/api/v1/me/security', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const result = await updateLockTimeout(userId, req.body?.lock_timeout_minutes)
+  if (!result.ok) {
+    return reply.status(400).send(validationError({ lock_timeout_minutes: result.message }))
+  }
+  return getSecurityState(userId)
+})
+
+async function ensureNotificationSettings(userId: string) {
+  await query(
+    `INSERT INTO notification_settings (user_id) VALUES ($1)
+     ON CONFLICT (user_id) DO NOTHING`,
+    [userId],
+  )
+}
+
+async function isEmailVerified(userId: string): Promise<boolean> {
+  const user = await queryOne<{ email_verified_at: unknown }>(
+    'SELECT email_verified_at FROM users WHERE id = $1',
+    [userId],
+  )
+  return !!user?.email_verified_at
+}
+
+app.get('/api/v1/me/notification-settings', async (req) => {
+  const { userId } = req as AuthedRequest
+  await ensureNotificationSettings(userId)
+  const row = await queryOne(
+    'SELECT push_enabled, email_enabled, remind_d1, remind_d0 FROM notification_settings WHERE user_id = $1',
+    [userId],
+  )
+  return row
+})
+
+app.patch<{
+  Body: Partial<{
+    push_enabled: boolean
+    email_enabled: boolean
+    remind_d1: boolean
+    remind_d0: boolean
+  }>
+}>('/api/v1/me/notification-settings', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  if (!(await isEmailVerified(userId))) {
+    return reply.status(403).send({
+      error: {
+        code: 'EMAIL_REQUIRED',
+        message: '알림 설정을 위해 이메일 인증이 필요합니다.',
+      },
+    })
+  }
+  await ensureNotificationSettings(userId)
+  const body = req.body ?? {}
+  const fields: string[] = []
+  const params: unknown[] = []
+  let n = 1
+  for (const key of ['push_enabled', 'email_enabled', 'remind_d1', 'remind_d0'] as const) {
+    if (body[key] !== undefined) {
+      fields.push(`${key} = $${n++}`)
+      params.push(body[key])
+    }
+  }
+  if (fields.length === 0) {
+    return reply.status(400).send(validationError({ _: '변경할 항목이 없습니다.' }))
+  }
+  fields.push(`updated_at = NOW()`)
+  params.push(userId)
+  await query(
+    `UPDATE notification_settings SET ${fields.join(', ')} WHERE user_id = $${n}`,
+    params,
+  )
+  const row = await queryOne(
+    'SELECT push_enabled, email_enabled, remind_d1, remind_d0 FROM notification_settings WHERE user_id = $1',
+    [userId],
+  )
+  return row
+})
+
+app.post<{
+  Body: { endpoint: string; keys: { p256dh: string; auth: string } }
+}>('/api/v1/me/push-subscription', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const { endpoint, keys } = req.body ?? {}
+  if (!endpoint || !keys?.p256dh || !keys?.auth) {
+    return reply.status(400).send(validationError({ endpoint: '구독 정보가 올바르지 않습니다.' }))
+  }
+  const id = randomUUID()
+  await query(
+    `INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (endpoint) DO UPDATE SET user_id = $2, p256dh = $4, auth = $5`,
+    [id, userId, endpoint, keys.p256dh, keys.auth],
+  )
+  return reply.status(201).send({ ok: true })
+})
+
+app.delete<{ Body: { endpoint: string } }>('/api/v1/me/push-subscription', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const endpoint = req.body?.endpoint
+  if (!endpoint) {
+    return reply.status(400).send(validationError({ endpoint: 'endpoint가 필요합니다.' }))
+  }
+  await query('DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint = $2', [
+    userId,
+    endpoint,
+  ])
+  return reply.status(204).send()
+})
+
+app.get('/api/v1/public/push-vapid-key', async (_req, reply) => {
+  const key = process.env.VAPID_PUBLIC_KEY
+  if (!key) {
+    return reply.status(503).send({
+      error: { code: 'PUSH_NOT_CONFIGURED', message: 'Push가 설정되지 않았습니다.' },
+    })
+  }
+  return { public_key: key }
+})
+
+app.get('/api/v1/auth/google/start', async (_req, reply) => {
+  const state = createOAuthState('google')
+  const url = googleAuthUrl(state)
+  if (!url) {
+    return reply.status(503).send({
+      error: { code: 'OAUTH_NOT_CONFIGURED', message: 'Google 로그인이 설정되지 않았습니다.' },
+    })
+  }
+  return reply.redirect(url)
+})
+
+app.get<{ Querystring: { code?: string; state?: string; error?: string } }>(
+  '/api/v1/auth/google/callback',
+  async (req, reply) => {
+    if (req.query.error) return reply.redirect(redirectWithError(req.query.error))
+    const { code, state } = req.query
+    if (!code || !state || !verifyOAuthState(state, 'google')) {
+      return reply.redirect(redirectWithError('invalid_state'))
+    }
+    try {
+      const jwt = await handleGoogleCallback(code)
+      return reply.redirect(redirectWithToken(jwt))
+    } catch {
+      return reply.redirect(redirectWithError('oauth_failed'))
+    }
+  },
+)
+
+app.get('/api/v1/auth/kakao/start', async (_req, reply) => {
+  const state = createOAuthState('kakao')
+  const url = kakaoAuthUrl(state)
+  if (!url) {
+    return reply.status(503).send({
+      error: { code: 'OAUTH_NOT_CONFIGURED', message: 'Kakao 로그인이 설정되지 않았습니다.' },
+    })
+  }
+  return reply.redirect(url)
+})
+
+app.get<{ Querystring: { code?: string; state?: string; error?: string } }>(
+  '/api/v1/auth/kakao/callback',
+  async (req, reply) => {
+    if (req.query.error) return reply.redirect(redirectWithError(req.query.error))
+    const { code, state } = req.query
+    if (!code || !state || !verifyOAuthState(state, 'kakao')) {
+      return reply.redirect(redirectWithError('invalid_state'))
+    }
+    try {
+      const jwt = await handleKakaoCallback(code)
+      return reply.redirect(redirectWithToken(jwt))
+    } catch {
+      return reply.redirect(redirectWithError('oauth_failed'))
+    }
+  },
+)
+
+app.get<{ Params: { token: string }; Querystring: { pin?: string } }>(
+  '/api/v1/public/share/:token',
+  async (req, reply) => {
+    const result = await buildPublicShareView(req.params.token, req.query.pin)
+    if (!result.ok) {
+      const status = result.code === 'SHARE_PIN_LOCKED' ? 429 : result.code === 'SHARE_INVALID' ? 404 : 401
+      return reply.status(status).send({
+        error: {
+          code: result.code,
+          message: result.message,
+          remaining: result.remaining,
+        },
+      })
+    }
+    return result.view
+  },
+)
+
+app.get('/api/v1/summary', async (req) => {
+  const { userId } = req as AuthedRequest
+  const res = await query<DebtRow>(
+    `SELECT d.*, c.display_name AS contact_name FROM debts d
+     JOIN contacts c ON c.id = d.contact_id
+     WHERE d.user_id = $1 AND d.status != 'archived'`,
+    [userId],
+  )
+
+  let totalReceivable = 0
+  let totalPayable = 0
+  let overdueCount = 0
+  let activeCount = 0
+  const upcoming: Array<{
+    debt_id: string
+    contact_name: string
+    due_on: string
+    balance: number
+    direction: string
+  }> = []
+
+  for (const raw of res.rows) {
+    const row = raw as unknown as DebtRow
+    const debt = await mapDebtAsync(row)
+    if (debt.status === 'active') activeCount++
+    if (debt.direction === 'lent') totalReceivable += debt.balance
+    else totalPayable += debt.balance
+    if (debt.is_overdue) overdueCount++
+    if (debt.due_on && debt.status === 'active' && debt.balance > 0) {
+      upcoming.push({
+        debt_id: debt.id,
+        contact_name: debt.contact.display_name,
+        due_on: debt.due_on,
+        balance: debt.balance,
+        direction: debt.direction,
+      })
+    }
+  }
+
+  upcoming.sort((a, b) => a.due_on.localeCompare(b.due_on))
+
+  return {
+    total_receivable: totalReceivable,
+    total_payable: totalPayable,
+    active_count: activeCount,
+    overdue_count: overdueCount,
+    upcoming_due: upcoming.slice(0, 5),
+  }
+})
+
+app.get<{ Querystring: { direction?: string; status?: string; filter?: string; q?: string } }>(
+  '/api/v1/debts',
+  async (req) => {
+    const { userId } = req as AuthedRequest
+    const { direction, status, filter, q } = req.query
+    const res = await query<DebtRow>(
+      `SELECT d.*, c.display_name AS contact_name FROM debts d
+       JOIN contacts c ON c.id = d.contact_id WHERE d.user_id = $1`,
+      [userId],
+    )
+
+    let mapped = await Promise.all(
+      res.rows.map((r) =>
+        mapDebtAsync({
+          ...(r as unknown as DebtRow),
+          principal: Number(r.principal),
+          occurred_on: formatPgDate(r.occurred_on),
+          due_on: r.due_on ? formatPgDate(r.due_on) : null,
+          agreement_closed: Boolean(r.agreement_closed),
+          contact_name: r.contact_name as string,
+        }),
+      ),
+    )
+    if (direction) mapped = mapped.filter((d) => d.direction === direction)
+    if (status) mapped = mapped.filter((d) => d.status === status)
+    if (filter === 'overdue') mapped = mapped.filter((d) => d.is_overdue)
+    if (q) {
+      const lower = q.toLowerCase()
+      mapped = mapped.filter(
+        (d) => d.contact.display_name.includes(q) || d.reason.toLowerCase().includes(lower),
+      )
+    }
+    return { items: mapped }
+  },
+)
+
+app.get<{ Params: { id: string } }>('/api/v1/debts/:id', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const row = await getDebtRow(req.params.id, userId)
+  if (!row) {
+    return reply.status(404).send({ error: { code: 'NOT_FOUND', message: '채무를 찾을 수 없습니다.' } })
+  }
+
+  const ledger = await getLedger(row.id)
+  const debt = mapDebt(row, ledger)
+  const ledger_entries = ledger
+    .filter((e) => !e.deleted_at)
+    .map((e) => ({
+      id: e.id,
+      debt_id: e.debt_id,
+      type: e.type,
+      amount: e.amount,
+      occurred_on: e.occurred_on,
+      note: e.note,
+      created_at: e.created_at,
+    }))
+
+  return {
+    ...debt,
+    opening: { principal: row.principal, occurred_on: row.occurred_on, reason: row.reason },
+    ledger_entries,
+  }
+})
+
+app.patch<{
+  Params: { id: string }
+  Body: {
+    reason?: string
+    due_on?: string | null
+    occurred_on?: string
+    contact_id?: string
+    updated_at: string
+  }
+}>('/api/v1/debts/:id', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const row = await getDebtRow(req.params.id, userId)
+  if (!row) return reply.status(404).send({ error: { code: 'NOT_FOUND', message: '채무를 찾을 수 없습니다.' } })
+  if (row.status === 'archived') return reply.status(400).send(archivedError())
+
+  const body = req.body ?? {}
+  const fields: Record<string, string> = {}
+
+  if (!body.updated_at) fields.updated_at = 'updated_at가 필요합니다.'
+  if (String(row.updated_at) !== body.updated_at) {
+    return reply.status(409).send({
+      error: { code: 'VERSION_CONFLICT', message: '다른 기기에서 수정되었습니다. 새로고침 후 다시 시도해 주세요.' },
+    })
+  }
+
+  if (body.reason !== undefined) {
+    const err = validateReason(body.reason)
+    if (err) fields.reason = err
+  }
+  if (body.occurred_on !== undefined) {
+    const err = validateDateOnOrBeforeToday(body.occurred_on, '발생일')
+    if (err) fields.occurred_on = err
+  }
+  if (body.due_on !== undefined && body.due_on !== null) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(body.due_on)) fields.due_on = '예정일 형식이 올바르지 않습니다.'
+    const occurred = body.occurred_on ?? row.occurred_on
+    if (body.due_on < occurred) fields.due_on = '예정일은 발생일 이후여야 합니다.'
+  }
+  if (body.contact_id) {
+    const c = await queryOne('SELECT id FROM contacts WHERE id = $1 AND user_id = $2', [
+      body.contact_id,
+      userId,
+    ])
+    if (!c) fields.contact_id = '상대를 찾을 수 없습니다.'
+  }
+
+  if (Object.keys(fields).length > 0) return reply.status(400).send(validationError(fields))
+
+  const sets: string[] = ['updated_at = NOW()']
+  const params: unknown[] = []
+  let n = 1
+
+  if (body.reason !== undefined) {
+    sets.push(`reason = $${n++}`)
+    params.push(body.reason.trim())
+  }
+  if (body.occurred_on !== undefined) {
+    sets.push(`occurred_on = $${n++}`)
+    params.push(body.occurred_on)
+  }
+  if (body.due_on !== undefined) {
+    sets.push(`due_on = $${n++}`)
+    params.push(body.due_on)
+  }
+  if (body.contact_id !== undefined) {
+    sets.push(`contact_id = $${n++}`)
+    params.push(body.contact_id)
+  }
+
+  params.push(row.id)
+  await query(`UPDATE debts SET ${sets.join(', ')} WHERE id = $${n}`, params)
+
+  const updated = await getDebtRow(row.id, userId)!
+  return mapDebtAsync(updated)
+})
+
+app.patch<{
+  Params: { id: string }
+  Body: { action: string; updated_at: string }
+}>('/api/v1/debts/:id/status', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const row = await getDebtRow(req.params.id, userId)
+  if (!row) return reply.status(404).send({ error: { code: 'NOT_FOUND', message: '채무를 찾을 수 없습니다.' } })
+
+  const body = req.body ?? {}
+  if (!body.updated_at || String(row.updated_at) !== body.updated_at) {
+    return reply.status(409).send({
+      error: { code: 'VERSION_CONFLICT', message: '다른 기기에서 수정되었습니다. 새로고침 후 다시 시도해 주세요.' },
+    })
+  }
+
+  const action = body.action
+  if (action === 'complete_agreement') {
+    if (row.status === 'archived') return reply.status(400).send(archivedError())
+    await query(
+      `UPDATE debts SET agreement_closed = TRUE, status = 'completed',
+       completed_at = COALESCE(completed_at, NOW()), updated_at = NOW() WHERE id = $1`,
+      [row.id],
+    )
+  } else if (action === 'archive') {
+    await revokeActiveForDebt(row.id)
+    await query(
+      `UPDATE debts SET status = 'archived', archived_at = NOW(), updated_at = NOW() WHERE id = $1`,
+      [row.id],
+    )
+  } else if (action === 'unarchive') {
+    const ledger = await getLedger(row.id)
+    const balance = computeBalance(row.principal, ledger)
+    const nextStatus = balance === 0 || row.agreement_closed ? 'completed' : 'active'
+    await query(
+      `UPDATE debts SET status = $1, archived_at = NULL, updated_at = NOW() WHERE id = $2`,
+      [nextStatus, row.id],
+    )
+  } else {
+    return reply.status(400).send(validationError({ action: '지원하지 않는 action입니다.' }))
+  }
+
+  const updated = await getDebtRow(row.id, userId)!
+  return mapDebtAsync(updated)
+})
+
+app.get('/api/v1/contacts', async (req) => {
+  const { userId } = req as AuthedRequest
+  const res = await query(
+    'SELECT * FROM contacts WHERE user_id = $1 ORDER BY display_name',
+    [userId],
+  )
+  return { items: res.rows }
+})
+
+app.get<{ Params: { id: string } }>('/api/v1/contacts/:id', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const contact = await queryOne('SELECT * FROM contacts WHERE id = $1 AND user_id = $2', [
+    req.params.id,
+    userId,
+  ])
+  if (!contact) {
+    return reply.status(404).send({ error: { code: 'NOT_FOUND', message: '상대를 찾을 수 없습니다.' } })
+  }
+
+  const debtsRes = await query<DebtRow>(
+    `SELECT d.*, c.display_name AS contact_name FROM debts d
+     JOIN contacts c ON c.id = d.contact_id
+     WHERE d.contact_id = $1 AND d.user_id = $2`,
+    [req.params.id, userId],
+  )
+  const debts = await Promise.all(debtsRes.rows.map((r) => mapDebtAsync(r as unknown as DebtRow)))
+
+  return { ...contact, debts }
+})
+
+app.post<{ Body: { display_name: string; note?: string } }>('/api/v1/contacts', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const name = req.body?.display_name?.trim()
+  if (!name) {
+    return reply.status(400).send(validationError({ display_name: '이름을 입력해 주세요.' }))
+  }
+  const id = await createContact(userId, name, req.body?.note)
+  const row = await queryOne('SELECT * FROM contacts WHERE id = $1', [id])
+  return reply.status(201).send(row)
+})
+
+app.patch<{
+  Params: { id: string }
+  Body: { display_name?: string; note?: string | null }
+}>('/api/v1/contacts/:id', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const contact = await queryOne('SELECT * FROM contacts WHERE id = $1 AND user_id = $2', [
+    req.params.id,
+    userId,
+  ])
+  if (!contact) {
+    return reply.status(404).send({ error: { code: 'NOT_FOUND', message: '상대를 찾을 수 없습니다.' } })
+  }
+
+  const body = req.body ?? {}
+  const fields: Record<string, string> = {}
+  if (body.display_name !== undefined && !body.display_name.trim()) {
+    fields.display_name = '이름을 입력해 주세요.'
+  }
+  if (Object.keys(fields).length > 0) return reply.status(400).send(validationError(fields))
+
+  await query(
+    `UPDATE contacts SET
+      display_name = COALESCE($1, display_name),
+      note = CASE WHEN $2::text IS NULL THEN note ELSE $2 END,
+      updated_at = NOW()
+     WHERE id = $3`,
+    [body.display_name?.trim() ?? null, body.note === undefined ? null : body.note, req.params.id],
+  )
+
+  const row = await queryOne('SELECT * FROM contacts WHERE id = $1', [req.params.id])
+  return row
+})
+
+app.delete<{ Params: { id: string } }>('/api/v1/contacts/:id', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const contact = await queryOne('SELECT * FROM contacts WHERE id = $1 AND user_id = $2', [
+    req.params.id,
+    userId,
+  ])
+  if (!contact) {
+    return reply.status(404).send({ error: { code: 'NOT_FOUND', message: '상대를 찾을 수 없습니다.' } })
+  }
+
+  const used = await queryOne('SELECT id FROM debts WHERE contact_id = $1 AND user_id = $2 LIMIT 1', [
+    req.params.id,
+    userId,
+  ])
+  if (used) {
+    return reply.status(400).send({
+      error: { code: 'CONTACT_IN_USE', message: '연결된 채무가 있어 삭제할 수 없습니다.' },
+    })
+  }
+
+  await query('DELETE FROM contacts WHERE id = $1', [req.params.id])
+  return reply.status(204).send()
+})
+
+app.post<{
+  Body: {
+    contact_id?: string
+    contact_name?: string
+    direction: string
+    principal: number
+    occurred_on: string
+    reason: string
+    due_on?: string | null
+  }
+}>('/api/v1/debts', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const body = req.body ?? {}
+  const fields: Record<string, string> = {}
+
+  let contactId = body.contact_id
+  if (!contactId && body.contact_name?.trim()) {
+    contactId = await createContact(userId, body.contact_name)
+  }
+  if (!contactId) fields.contact_id = '상대를 선택하거나 이름을 입력해 주세요.'
+
+  if (body.direction !== 'lent' && body.direction !== 'borrowed') {
+    fields.direction = '방향을 선택해 주세요.'
+  }
+
+  const principalErr = validatePrincipal(body.principal)
+  if (principalErr) fields.principal = principalErr
+
+  const occurredErr = validateDateOnOrBeforeToday(body.occurred_on, '발생일')
+  if (occurredErr) fields.occurred_on = occurredErr
+
+  const reasonErr = validateReason(body.reason)
+  if (reasonErr) fields.reason = reasonErr
+
+  if (body.due_on) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(body.due_on)) {
+      fields.due_on = '예정일 형식이 올바르지 않습니다.'
+    } else if (body.occurred_on && body.due_on < body.occurred_on) {
+      fields.due_on = '예정일은 발생일 이후여야 합니다.'
+    }
+  }
+
+  if (contactId) {
+    const c = await queryOne('SELECT id FROM contacts WHERE id = $1 AND user_id = $2', [contactId, userId])
+    if (!c) fields.contact_id = '상대를 찾을 수 없습니다.'
+  }
+
+  if (Object.keys(fields).length > 0) return reply.status(400).send(validationError(fields))
+
+  const id = randomUUID()
+  await query(
+    `INSERT INTO debts (id, user_id, contact_id, direction, principal, occurred_on, reason, due_on, status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active')`,
+    [
+      id,
+      userId,
+      contactId!,
+      body.direction,
+      body.principal,
+      body.occurred_on,
+      body.reason.trim(),
+      body.due_on ?? null,
+    ],
+  )
+
+  const row = await getDebtRow(id, userId)!
+  return reply.status(201).send(await mapDebtAsync(row))
+})
+
+app.post<{
+  Params: { id: string }
+  Body: { type: string; amount: number; occurred_on: string; note?: string | null }
+}>('/api/v1/debts/:id/ledger', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const row = await getDebtRow(req.params.id, userId)
+  if (!row) {
+    return reply.status(404).send({ error: { code: 'NOT_FOUND', message: '채무를 찾을 수 없습니다.' } })
+  }
+  if (row.status === 'archived') return reply.status(400).send(archivedError())
+
+  const body = req.body ?? {}
+  const fields: Record<string, string> = {}
+
+  if (body.type === 'payment') {
+    const amountErr = validatePaymentAmount(body.amount)
+    if (amountErr) fields.amount = amountErr
+  } else if (body.type === 'adjustment') {
+    const amountErr = validateAdjustmentAmount(body.amount)
+    if (amountErr) fields.amount = amountErr
+    const noteErr = validateAdjustmentNote(body.note)
+    if (noteErr) fields.note = noteErr
+  } else {
+    fields.type = 'type은 payment 또는 adjustment여야 합니다.'
+  }
+
+  const dateErr = validateDateOnOrBeforeToday(body.occurred_on, '일자')
+  if (dateErr) fields.occurred_on = dateErr
+  else if (body.occurred_on < row.occurred_on) {
+    fields.occurred_on = '일자는 채무 발생일 이후여야 합니다.'
+  }
+
+  if (body.type === 'payment' && body.note != null && body.note.length > 500) {
+    fields.note = '메모는 500자 이하여야 합니다.'
+  }
+
+  if (Object.keys(fields).length > 0) return reply.status(400).send(validationError(fields))
+
+  const entryId = randomUUID()
+  await query(
+    `INSERT INTO ledger_entries (id, debt_id, type, amount, occurred_on, note) VALUES ($1,$2,$3,$4,$5,$6)`,
+    [
+      entryId,
+      row.id,
+      body.type,
+      body.amount,
+      body.occurred_on,
+      body.type === 'adjustment' ? body.note?.trim() : body.note?.trim() || null,
+    ],
+  )
+
+  await refreshDebtStatus(row.id)
+
+  const updated = await getDebtRow(row.id, userId)!
+  const ledger = await getLedger(row.id)
+  const debt = mapDebt(updated, ledger)
+  const entry = ledger.find((e) => e.id === entryId)
+
+  return reply.status(201).send({
+    entry: entry
+      ? {
+          id: entry.id,
+          debt_id: entry.debt_id,
+          type: entry.type,
+          amount: entry.amount,
+          occurred_on: entry.occurred_on,
+          note: entry.note,
+          created_at: entry.created_at,
+        }
+      : null,
+    debt,
+  })
+})
+
+app.get<{ Params: { id: string } }>('/api/v1/debts/:id/share', async (req, reply) => {
+  const { userId } = req as unknown as AuthedRequest
+  const row = await getDebtRow(req.params.id, userId)
+  if (!row) {
+    return reply.status(404).send({ error: { code: 'NOT_FOUND', message: '채무를 찾을 수 없습니다.' } })
+  }
+  const active = await getActiveShareForDebt(row.id)
+  return active ? toShareResponse(active) : null
+})
+
+app.post<{
+  Params: { id: string }
+  Body: {
+    expires_in_days?: number | null
+    pin?: string | null
+    anonymous?: boolean
+    include_reason?: boolean
+  }
+}>('/api/v1/debts/:id/share', async (req, reply) => {
+  const { userId } = req as unknown as AuthedRequest
+  const row = await getDebtRow(req.params.id, userId)
+  if (!row) {
+    return reply.status(404).send({ error: { code: 'NOT_FOUND', message: '채무를 찾을 수 없습니다.' } })
+  }
+  if (row.status === 'archived') return reply.status(400).send(archivedError())
+
+  const body = req.body ?? {}
+  const fields: Record<string, string> = {}
+  const allowedDays = [30, 90, 180, null] as const
+  let expiresIn: number | null = 90
+  if (body.expires_in_days !== undefined) {
+    if (body.expires_in_days === null) {
+      expiresIn = null
+    } else if ([30, 90, 180].includes(body.expires_in_days)) {
+      expiresIn = body.expires_in_days
+    } else {
+      fields.expires_in_days = '만료일은 30, 90, 180 또는 무제한(null)만 가능합니다.'
+    }
+  }
+  let pin: string | null = null
+  if (body.pin != null && body.pin !== '') {
+    if (!/^\d{4,6}$/.test(body.pin)) {
+      fields.pin = 'PIN은 4~6자리 숫자입니다.'
+    } else {
+      pin = body.pin
+    }
+  }
+  if (Object.keys(fields).length > 0) return reply.status(400).send(validationError(fields))
+
+  const share = await createShareToken(row.id, {
+    expires_in_days: expiresIn,
+    pin,
+    anonymous: body.anonymous ?? false,
+    include_reason: body.include_reason !== false,
+  })
+  return reply.status(201).send(toShareResponse(share))
+})
+
+app.delete<{ Params: { id: string } }>('/api/v1/debts/:id/share', async (req, reply) => {
+  const { userId } = req as unknown as AuthedRequest
+  const ok = await revokeShareForDebt(req.params.id, userId)
+  if (!ok) {
+    return reply.status(404).send({ error: { code: 'NOT_FOUND', message: '채무를 찾을 수 없습니다.' } })
+  }
+  return reply.status(204).send()
+})
+
+app.delete<{ Params: { id: string; entryId: string } }>(
+  '/api/v1/debts/:id/ledger/:entryId',
+  async (req, reply) => {
+    const { userId } = req as AuthedRequest
+    const row = await getDebtRow(req.params.id, userId)
+    if (!row) {
+      return reply.status(404).send({ error: { code: 'NOT_FOUND', message: '채무를 찾을 수 없습니다.' } })
+    }
+    if (row.status === 'archived') return reply.status(400).send(archivedError())
+
+    const entry = await queryOne(
+      'SELECT * FROM ledger_entries WHERE id = $1 AND debt_id = $2 AND deleted_at IS NULL',
+      [req.params.entryId, row.id],
+    )
+    if (!entry) {
+      return reply.status(404).send({ error: { code: 'NOT_FOUND', message: '내역을 찾을 수 없습니다.' } })
+    }
+
+    await query('UPDATE ledger_entries SET deleted_at = NOW() WHERE id = $1', [req.params.entryId])
+    await refreshDebtStatus(row.id)
+
+    const updated = await getDebtRow(row.id, userId)!
+    return mapDebtAsync(updated)
+  },
+)
+
+if (process.env.NOTIFY_CRON_DEV === 'true') {
+  setInterval(() => {
+    void runDueReminders(true).then((r) => console.log('[NOTIFY_CRON_DEV]', r))
+  }, 60_000)
+  console.log('NOTIFY_CRON_DEV: dry-run every 60s')
+}
+
+const port = Number(process.env.PORT) || 3910
+await app.listen({ port, host: '0.0.0.0' })
+console.log(`payClear API http://localhost:${port}`)

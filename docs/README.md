@@ -14,9 +14,13 @@ PRD v0.2.4를 기준으로 한 **초기 문서 세트**입니다. 정합 점검:
 | [product/policies-index-v0.1.md](./product/policies-index-v0.1.md) | 정책·엣지·에러 색인 | — |
 | [qa/acceptance-v0.1.md](./qa/acceptance-v0.1.md) | 인수 조건·시나리오 체크리스트 | 3 |
 | [decisions/ADR-001-pwa-first.md](./decisions/ADR-001-pwa-first.md) | 플랫폼 결정 기록 | — |
+| [decisions/ADR-002-sns-auth-local-postgres.md](./decisions/ADR-002-sns-auth-local-postgres.md) | SNS Auth + 로컬 Postgres | 2 |
+| [infra/local-postgres.md](./infra/local-postgres.md) | 로컬 DB·OAuth 환경 변수 | 2 |
 | [changelog/2026-06-04-initial-docs.md](./changelog/2026-06-04-initial-docs.md) | 문서 세트 도입 이력 | — |
 | [product/user-flows-v0.1.md](./product/user-flows-v0.1.md) | 사용자 플로우 | — |
 | [qa/doc-alignment-v0.1.md](./qa/doc-alignment-v0.1.md) | 문서 정합 점검 | — |
+| [design/stitch-payclear.md](./design/stitch-payclear.md) | Stitch 2B 산출물 ID·화면 | 2 |
+| [design/mock-comparison-v0.1.md](./design/mock-comparison-v0.1.md) | 2A vs 2B 비교·디자인 선택 | 2 |
 
 ## 버전 정렬
 
@@ -33,5 +37,5 @@ PRD가 갱신되면 위 문서의 `PRD 참조` 절을 먼저 맞춥니다.
 ## 다음 단계
 
 1. ~~PRD 승인~~ **완료** (2026-06-04)
-2. **진행 중:** 이중 목업(자체 + Stitch) — `client-project-lifecycle` 단계 2
-3. 디자인 선택 → [qa/stage3-entry-checklist.md](./qa/stage3-entry-checklist.md) → Gate 2 → 구현
+2. **2A·2B·디자인 선택 완료** — **Stitch(B)** [mock-comparison-v0.1.md](./design/mock-comparison-v0.1.md)
+3. **Gate 2 구현 진행 중** — `apps/web` · `apps/api` · [stage3-entry-checklist.md](./qa/stage3-entry-checklist.md)

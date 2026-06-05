@@ -24,7 +24,7 @@ User 1──* Contact 1──* Debt 1──* LedgerEntry
 
 ### 2.1 users (인증 연동)
 
-구현 시 Auth 제공자 ID와 매핑. payClear 전용: 알림 설정, 삭제 예약 시각.
+[ADR-002](../decisions/ADR-002-sns-auth-local-postgres.md): SNS OAuth → `oauth_accounts(provider, provider_user_id)` → `users.id`. Supabase 미사용. payClear 전용: 알림 설정, 삭제 예약 시각, `email`·`email_verified_at`.
 
 ### 2.2 contacts
 

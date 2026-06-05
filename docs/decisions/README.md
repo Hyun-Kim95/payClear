@@ -5,3 +5,4 @@
 | ADR | 제목 |
 |-----|------|
 | [ADR-001-pwa-first.md](./ADR-001-pwa-first.md) | v0.1 웹+PWA 우선 |
+| [ADR-002-sns-auth-local-postgres.md](./ADR-002-sns-auth-local-postgres.md) | SNS 로그인 + 로컬 Postgres (Supabase 미사용) |

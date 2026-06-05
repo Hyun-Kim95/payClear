@@ -1,0 +1,36 @@
+/* Stitch design system — payClear */
+:root {
+  --pc-primary: #1a56db;
+  --pc-primary-hover: #1648b8;
+  --pc-primary-soft: #e8effc;
+  --pc-primary-gradient: linear-gradient(135deg, #1a56db 0%, #3b82f6 100%);
+  --pc-bg: #f8fafc;
+  --pc-surface: #ffffff;
+  --pc-text: #0f172a;
+  --pc-muted: #64748b;
+  --pc-border: #e2e8f0;
+  --pc-danger: #dc2626;
+  --pc-danger-soft: #fef2f2;
+  --pc-success: #059669;
+  --pc-warning: #d97706;
+  --pc-agreement: #475569;
+  --pc-radius-sm: 8px;
+  --pc-radius: 12px;
+  --pc-radius-lg: 16px;
+  --pc-radius-xl: 20px;
+  --pc-shadow: 0 4px 24px rgba(26, 86, 219, 0.08);
+  --pc-shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.06);
+  --pc-font: 'Plus Jakarta Sans', 'Noto Sans KR', system-ui, sans-serif;
+}
+
+[data-theme='dark'] {
+  --pc-bg: #0b1220;
+  --pc-surface: #111827;
+  --pc-text: #f1f5f9;
+  --pc-muted: #94a3b8;
+  --pc-border: #1e293b;
+  --pc-primary-soft: #1e3a5f;
+  --pc-primary-gradient: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+  --pc-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  --pc-danger-soft: #3f1d1d;
+}

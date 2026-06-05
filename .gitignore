@@ -22,6 +22,7 @@ Desktop.ini
 # Dependencies / build (app)
 node_modules/
 dist/
+dev-dist/
 build/
 .next/
 out/

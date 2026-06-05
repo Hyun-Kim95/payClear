@@ -252,7 +252,8 @@ PRD §7.6 X1~X14 적용. 주요:
 ## 5. Gate 2 오픈 이슈
 
 - [ ] OpenAPI YAML 파일 경로(`docs/api/openapi.yaml`)
-- [ ] Auth 제공자(Supabase Auth 등)와 `/me` 매핑
+- [ ] SNS OAuth(Google/Kakao) + `users`·`oauth_accounts` 매핑 — [ADR-002](../decisions/ADR-002-sns-auth-local-postgres.md), Supabase 미사용
+- [ ] `GET /auth/{provider}/start`, `GET /auth/{provider}/callback`, JWT 발급
 - [ ] `updated_at` 낙관적 잠금 모든 PATCH
 - [ ] Share PIN 검증: Query vs POST body vs 쿠키
 - [ ] 페이지네이션(`GET /debts` cursor)

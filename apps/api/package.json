@@ -1,0 +1,36 @@
+{
+  "name": "@payclear/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "db:migrate": "tsx src/scripts/run-migrate.ts",
+    "db:seed": "tsx src/scripts/run-seed.ts",
+    "db:create": "tsx src/scripts/run-setup-db.ts",
+    "db:setup": "npm run db:migrate && npm run db:seed",
+    "smoke:phase1": "tsx src/scripts/smoke-phase1.ts",
+    "smoke:phase2": "tsx src/scripts/smoke-phase2.ts",
+    "smoke:phase3": "tsx src/scripts/smoke-phase3.ts",
+    "smoke:phase4": "tsx src/scripts/smoke-phase4.ts",
+    "notify:cron": "tsx src/scripts/run-notify-cron.ts",
+    "notify:cron:dry": "tsx src/scripts/run-notify-cron.ts --dry-run"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.0.1",
+    "dotenv": "^17.2.0",
+    "fastify": "^5.4.0",
+    "jose": "^6.2.3",
+    "nodemailer": "^8.0.10",
+    "pg": "^8.16.3",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.3",
+    "@types/nodemailer": "^8.0.0",
+    "@types/pg": "^8.15.4",
+    "tsx": "^4.20.3",
+    "typescript": "~5.8.3"
+  }
+}

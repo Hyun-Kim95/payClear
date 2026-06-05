@@ -454,14 +454,16 @@
 
 **v0.1 쓰기 API 이메일 정책:** 계정 **이메일 미인증** 시 `POST/PATCH` 채무·ledger **허용**, 단 F11 발송·설정의 알림 토글은 `EMAIL_REQUIRED`로 **차단**(복구·알림만 막고 기록은 가능).
 
-### 8.4 스택 (미확정 — 추천만)
+### 8.4 스택
 
-| 레이어 | 추천 | 이유 |
-|--------|------|------|
-| 프론트 | React + Vite (또는 Next.js) | 웹+PWA, kit 규칙(다크모드·상태 UI) 적용 용이 |
-| 백엔드 | Node 또는 Supabase BaaS | 빠른 CRUD·인증 |
-| DB | PostgreSQL (Supabase) | 관계·이력 적합 |
-| 인증 | Supabase Auth / Clerk | 소셜·이메일 |
+| 레이어 | v0.1 확정 | 비고 |
+|--------|-----------|------|
+| 프론트 | React + Vite (`apps/web`) | 웹+PWA, Stitch(B) |
+| 백엔드 | Node + Fastify (`apps/api`) | 자체 REST |
+| DB | **PostgreSQL (로컬 → 운영)** | [ADR-002](../decisions/ADR-002-sns-auth-local-postgres.md), **Supabase 미사용** |
+| 인증 | **SNS OAuth → 자체 JWT** | Google·Kakao 등, **Supabase Auth 미사용** |
+
+개발 환경: [local-postgres.md](../infra/local-postgres.md). 프로토타입 SQLite는 Postgres 전환 후 제거.
 
 **repo 이름 `payClear`와 제품명 일치 가정.**
 

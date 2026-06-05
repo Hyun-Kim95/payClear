@@ -1,0 +1,33 @@
+-- F15 app lock + F11 notifications
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS app_pin_hash TEXT;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS app_pin_failed_count INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS app_pin_locked_until TIMESTAMPTZ;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS lock_timeout_minutes INTEGER NOT NULL DEFAULT 5;
+
+CREATE TABLE IF NOT EXISTS notification_settings (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  push_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  email_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  remind_d1 BOOLEAN NOT NULL DEFAULT TRUE,
+  remind_d0 BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
