@@ -27,14 +27,28 @@ function assert(cond: boolean, msg: string) {
 
 async function main() {
   const token = 'dev-token'
+  const TEST_PIN = '1234'
 
   const sec0 = await req('/me/security', token)
   assert(sec0.status === 200, 'GET /me/security')
 
+  const setPinBody = sec0.data.pin_set
+    ? { pin: TEST_PIN, current_pin: TEST_PIN }
+    : { pin: TEST_PIN }
+
   const setPin = await req('/me/security/pin', token, {
     method: 'POST',
-    body: JSON.stringify({ pin: '1234' }),
+    body: JSON.stringify(setPinBody),
   })
+  if (!(setPin.status === 200 && setPin.data.ok)) {
+    console.error('POST /me/security/pin response:', setPin.status, setPin.data)
+    if (sec0.data.pin_set) {
+      console.error(
+        'Hint: demo user PIN is not 1234. Reset with:\n' +
+          "  UPDATE users SET app_pin_hash=NULL, app_pin_failed_count=0, app_pin_locked_until=NULL WHERE id='user-1';",
+      )
+    }
+  }
   assert(setPin.status === 200 && setPin.data.ok, 'POST /me/security/pin')
 
   const sec1 = await req('/me/security', token)
@@ -42,7 +56,7 @@ async function main() {
 
   const verifyOk = await req('/me/security/verify-pin', token, {
     method: 'POST',
-    body: JSON.stringify({ pin: '1234' }),
+    body: JSON.stringify({ pin: TEST_PIN }),
   })
   assert(verifyOk.status === 200 && verifyOk.data.ok, 'verify-pin success')
 
