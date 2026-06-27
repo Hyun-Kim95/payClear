@@ -1,15 +1,50 @@
+import { Capacitor } from '@capacitor/core'
+import { Preferences } from '@capacitor/preferences'
+
 const TOKEN_KEY = 'payclear-token'
 export const DEV_TOKEN = 'dev-token'
 
+// 네이티브(Capacitor) 여부. 웹 빌드에서는 항상 false.
+const isNative = Capacitor.isNativePlatform()
+
+// 네이티브에서는 Preferences가 비동기라, 동기 getToken 시그니처를 유지하기 위해
+// 앱 시작 시 initAuth()로 토큰을 메모리 캐시에 로드한다. 웹은 sessionStorage 동기 사용.
+let tokenCache: string | null = null
+
+/**
+ * 앱 시작 시 1회 호출. 네이티브면 Preferences에서 토큰을 메모리 캐시로 로드한다.
+ * 웹에서는 sessionStorage를 직접 동기 사용하므로 별도 작업이 없다.
+ */
+export async function initAuth(): Promise<void> {
+  if (!isNative) return
+  try {
+    const { value } = await Preferences.get({ key: TOKEN_KEY })
+    tokenCache = value ?? null
+  } catch {
+    tokenCache = null
+  }
+}
+
 export function getToken(): string | null {
+  if (isNative) return tokenCache
   return sessionStorage.getItem(TOKEN_KEY)
 }
 
 export function setToken(token: string) {
+  if (isNative) {
+    tokenCache = token
+    void Preferences.set({ key: TOKEN_KEY, value: token })
+    return
+  }
   sessionStorage.setItem(TOKEN_KEY, token)
 }
 
 export function clearToken() {
+  if (isNative) {
+    tokenCache = null
+    void Preferences.remove({ key: TOKEN_KEY })
+    return
+  }
   sessionStorage.removeItem(TOKEN_KEY)
 }
 
@@ -33,7 +68,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (token) headers.Authorization = `Bearer ${token}`
   if (init?.body) headers['Content-Type'] = 'application/json'
 
-  const res = await fetch(`/api/v1${path}`, { ...init, headers })
+  const res = await fetch(`${API_BASE}${path}`, { ...init, headers })
   if (res.status === 204) return undefined as T
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
@@ -181,7 +216,7 @@ export interface NotificationSettings {
 }
 
 async function publicRequest<T>(path: string): Promise<T> {
-  const res = await fetch(`/api/v1${path}`)
+  const res = await fetch(`${API_BASE}${path}`)
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
     throw new ApiError(
@@ -298,12 +333,46 @@ export const api = {
       body: JSON.stringify({ endpoint }),
     }),
   getPushVapidKey: () => publicRequest<{ public_key: string }>('/public/push-vapid-key'),
+  registerFcmToken: (token: string) =>
+    request<{ ok: boolean }>('/me/fcm-token', {
+      method: 'POST',
+      body: JSON.stringify({ token, platform: 'android' }),
+    }),
+  deleteFcmToken: (token: string) =>
+    request<void>('/me/fcm-token', {
+      method: 'DELETE',
+      body: JSON.stringify({ token }),
+    }),
 }
 
-export const API_BASE = '/api/v1'
+// 빌드타임 환경변수 VITE_API_BASE로 API base를 주입한다.
+// - 웹 빌드(미설정): 기존 상대경로 '/api/v1' 유지(같은 오리진 / Vite proxy).
+// - 앱 빌드(설정): 'https://<railway-domain>/api/v1' 절대 URL.
+export const API_BASE = import.meta.env.VITE_API_BASE ?? '/api/v1'
 
 export function oauthStartUrl(provider: 'google' | 'kakao'): string {
-  return `${API_BASE}/auth/${provider}/start`
+  // 네이티브 앱은 콜백을 딥링크(payclear://)로 받기 위해 client=app을 붙인다.
+  const suffix = isNative ? '?client=app' : ''
+  return `${API_BASE}/auth/${provider}/start${suffix}`
+}
+
+/**
+ * OAuth 로그인 시작.
+ * - 웹: 현재 탭을 서버 start URL로 이동(기존 동작).
+ * - 네이티브: 시스템 브라우저(@capacitor/browser)로 열고, 콜백은 appUrlOpen 딥링크로 받는다.
+ */
+export async function startOAuth(provider: 'google' | 'kakao'): Promise<void> {
+  const url = oauthStartUrl(provider)
+  if (isNative) {
+    const { Browser } = await import('@capacitor/browser')
+    await Browser.open({ url })
+    return
+  }
+  window.location.href = url
+}
+
+export function isNativePlatform(): boolean {
+  return isNative
 }
 
 export function formatKRW(amount: number): string {

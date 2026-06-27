@@ -3,6 +3,7 @@ import { query, queryOne } from '../db/pool.js'
 import { signJwt } from './jwt.js'
 
 type Provider = 'google' | 'kakao'
+export type OAuthClient = 'app' | 'web'
 
 const STATE_TTL_MS = 10 * 60 * 1000
 
@@ -10,26 +11,33 @@ function stateSecret(): string {
   return process.env.JWT_SECRET ?? 'change-me-in-local-dev-only'
 }
 
-export function createOAuthState(provider: Provider): string {
+export function createOAuthState(provider: Provider, client: OAuthClient = 'web'): string {
   const payload = Buffer.from(
-    JSON.stringify({ provider, nonce: randomBytes(16).toString('hex'), exp: Date.now() + STATE_TTL_MS }),
+    JSON.stringify({
+      provider,
+      client,
+      nonce: randomBytes(16).toString('hex'),
+      exp: Date.now() + STATE_TTL_MS,
+    }),
   ).toString('base64url')
   const sig = createHmac('sha256', stateSecret()).update(payload).digest('base64url')
   return `${payload}.${sig}`
 }
 
-export function verifyOAuthState(state: string, provider: Provider): boolean {
+// state 검증 후 client('app'|'web')를 반환. 검증 실패 시 null.
+// 하위호환: client 미포함(구버전 state)이면 'web'으로 간주.
+export function verifyOAuthState(state: string, provider: Provider): OAuthClient | null {
   const [payload, sig] = state.split('.')
-  if (!payload || !sig) return false
+  if (!payload || !sig) return null
   const expected = createHmac('sha256', stateSecret()).update(payload).digest('base64url')
-  if (sig !== expected) return false
+  if (sig !== expected) return null
   try {
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
-    if (data.provider !== provider) return false
-    if (typeof data.exp !== 'number' || data.exp < Date.now()) return false
-    return true
+    if (data.provider !== provider) return null
+    if (typeof data.exp !== 'number' || data.exp < Date.now()) return null
+    return data.client === 'app' ? 'app' : 'web'
   } catch {
-    return false
+    return null
   }
 }
 
@@ -157,10 +165,19 @@ export async function handleKakaoCallback(code: string): Promise<string> {
   return signJwt(userId)
 }
 
-export function redirectWithToken(jwt: string): string {
+// 앱 딥링크 커스텀 스킴(계약 §2). 앱은 payclear://auth/callback 을 가로챈다.
+const APP_SCHEME = 'payclear'
+
+export function redirectWithToken(jwt: string, client: OAuthClient = 'web'): string {
+  if (client === 'app') {
+    return `${APP_SCHEME}://auth/callback?token=${encodeURIComponent(jwt)}`
+  }
   return `${webOrigin()}/auth/callback?token=${encodeURIComponent(jwt)}`
 }
 
-export function redirectWithError(code: string): string {
+export function redirectWithError(code: string, client: OAuthClient = 'web'): string {
+  if (client === 'app') {
+    return `${APP_SCHEME}://auth/callback?error=${encodeURIComponent(code)}`
+  }
   return `${webOrigin()}/auth/callback?error=${encodeURIComponent(code)}`
 }

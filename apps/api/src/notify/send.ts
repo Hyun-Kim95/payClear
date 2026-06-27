@@ -1,5 +1,7 @@
 import webpush from 'web-push'
 import nodemailer from 'nodemailer'
+import { cert, getApps, initializeApp } from 'firebase-admin/app'
+import { getMessaging } from 'firebase-admin/messaging'
 import { query } from '../db/pool.js'
 
 function todayKST(): string {
@@ -22,6 +24,46 @@ function configureWebPush(): boolean {
     priv,
   )
   return true
+}
+
+// FCM 자격증명 초기화(1회). 자격증명 미설정 시 false → FCM skip(VAPID 미설정 시 skip과 동일 패턴).
+// 지원: FIREBASE_SERVICE_ACCOUNT(JSON 문자열) 또는 FIREBASE_PROJECT_ID+FIREBASE_CLIENT_EMAIL+FIREBASE_PRIVATE_KEY.
+let fcmReady: boolean | null = null
+
+function configureFcm(): boolean {
+  if (fcmReady !== null) return fcmReady
+  try {
+    if (getApps().length > 0) {
+      fcmReady = true
+      return true
+    }
+    const saJson = process.env.FIREBASE_SERVICE_ACCOUNT
+    if (saJson) {
+      initializeApp({ credential: cert(JSON.parse(saJson)) })
+    } else if (
+      process.env.FIREBASE_PROJECT_ID &&
+      process.env.FIREBASE_CLIENT_EMAIL &&
+      process.env.FIREBASE_PRIVATE_KEY
+    ) {
+      initializeApp({
+        credential: cert({
+          projectId: process.env.FIREBASE_PROJECT_ID,
+          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+          // env에 \n이 리터럴로 들어오는 경우를 처리한다.
+          privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        }),
+      })
+    } else {
+      fcmReady = false
+      return false
+    }
+    fcmReady = true
+    return true
+  } catch (e) {
+    console.warn('FCM configure failed', e)
+    fcmReady = false
+    return false
+  }
 }
 
 async function sendEmail(to: string, subject: string, text: string): Promise<void> {
@@ -52,6 +94,7 @@ async function sendEmail(to: string, subject: string, text: string): Promise<voi
 
 export interface ReminderRunResult {
   sent_push: number
+  sent_fcm: number
   sent_email: number
   skipped: number
 }
@@ -60,6 +103,7 @@ export async function runDueReminders(dryRun = false): Promise<ReminderRunResult
   const today = todayKST()
   const tomorrow = tomorrowKST()
   const hasPush = configureWebPush()
+  const hasFcm = configureFcm()
 
   const usersRes = await query<{
     user_id: string
@@ -80,6 +124,7 @@ export async function runDueReminders(dryRun = false): Promise<ReminderRunResult
   `)
 
   let sentPush = 0
+  let sentFcm = 0
   let sentEmail = 0
   let skipped = 0
 
@@ -152,6 +197,33 @@ export async function runDueReminders(dryRun = false): Promise<ReminderRunResult
         }
       }
 
+      if (u.push_enabled && hasFcm) {
+        const fcm = await query<{ token: string }>(
+          'SELECT token FROM fcm_tokens WHERE user_id = $1',
+          [u.user_id],
+        )
+        for (const t of fcm.rows) {
+          try {
+            await getMessaging().send({
+              token: t.token,
+              notification: { title, body },
+            })
+            sentFcm++
+          } catch (e) {
+            // 만료/무효 토큰은 정리한다.
+            const code = (e as { code?: string })?.code
+            if (
+              code === 'messaging/registration-token-not-registered' ||
+              code === 'messaging/invalid-registration-token' ||
+              code === 'messaging/invalid-argument'
+            ) {
+              await query('DELETE FROM fcm_tokens WHERE token = $1', [t.token])
+            }
+            console.warn('FCM failed', t.token, code ?? e)
+          }
+        }
+      }
+
       if (u.email_enabled && u.email && u.email_verified_at) {
         await sendEmail(u.email, title, body)
         sentEmail++
@@ -159,5 +231,5 @@ export async function runDueReminders(dryRun = false): Promise<ReminderRunResult
     }
   }
 
-  return { sent_push: sentPush, sent_email: sentEmail, skipped }
+  return { sent_push: sentPush, sent_fcm: sentFcm, sent_email: sentEmail, skipped }
 }

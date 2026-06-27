@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, ApiError, type NotificationSettings } from '../api/client'
+import { api, ApiError, isNativePlatform, type NotificationSettings } from '../api/client'
+import { registerNativePush } from '../native/push'
 
 function urlBase64ToUint8Array(base64: string): ArrayBuffer {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4)
@@ -39,6 +40,17 @@ export function SettingsNotificationsPage() {
   const enablePush = async () => {
     setPushStatus(null)
     setError(null)
+
+    // 네이티브 앱: FCM 경로로 분기(웹은 아래 web-push 흐름 유지).
+    if (isNativePlatform()) {
+      const result = await registerNativePush()
+      setPushStatus(result.message)
+      if (result.ok) {
+        await patch({ push_enabled: true })
+      }
+      return
+    }
+
     try {
       if (!('Notification' in window) || !('serviceWorker' in navigator)) {
         setPushStatus('이 브라우저는 Push를 지원하지 않습니다. 이메일 알림을 사용하세요.')

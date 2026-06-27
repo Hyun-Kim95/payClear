@@ -21,7 +21,8 @@ self.addEventListener('push', (event) => {
   const title = payload.title ?? 'payClear'
   const options: NotificationOptions = {
     body: payload.body ?? '채무 예정일 알림',
-    icon: '/favicon.svg',
+    icon: '/icon-192.png',
+    badge: '/favicon-32.png',
     data: { url: payload.url ?? '/' },
   }
   event.waitUntil(self.registration.showNotification(title, options))

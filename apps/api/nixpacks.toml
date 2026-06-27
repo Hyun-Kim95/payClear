@@ -1,0 +1,4 @@
+# Railway/Nixpacks 런타임 핀
+# tsx 런타임(별도 빌드 단계 없음). @types/node ^24 → Node 22 사용.
+[phases.setup]
+nixPkgs = ["nodejs_22"]

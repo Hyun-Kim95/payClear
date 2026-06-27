@@ -39,6 +39,7 @@ import {
   redirectWithError,
   redirectWithToken,
   verifyOAuthState,
+  type OAuthClient,
 } from './auth/oauth.js'
 import {
   buildPublicShareView,
@@ -57,7 +58,13 @@ import {
 import { runDueReminders } from './notify/send.js'
 
 await runMigrations()
-await seedDemo()
+// 데모 시드는 SEED_DEMO=true일 때만 실행(운영 기본 off, 데모 데이터 유입 차단).
+// 이미 데모 유저가 있으면 seedDemo 내부에서 skip한다.
+if (process.env.SEED_DEMO === 'true') {
+  await seedDemo()
+} else {
+  console.log('Seed skipped: SEED_DEMO !== "true"')
+}
 
 const app = Fastify({ logger: true })
 await app.register(cors, { origin: true })
@@ -65,8 +72,12 @@ await app.register(cors, { origin: true })
 type AuthedRequest = { userId: string }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// EMAIL_VERIFY_DEV: 명시값(true/false)이 있으면 그대로 따른다(운영에서 false 주입 시 확실히 off).
+// 미설정 시에만 dev token 허용 여부(ALLOW_DEV_TOKEN)를 기본값으로 사용한다.
 const EMAIL_VERIFY_DEV =
-  process.env.EMAIL_VERIFY_DEV === 'true' || process.env.ALLOW_DEV_TOKEN !== 'false'
+  process.env.EMAIL_VERIFY_DEV !== undefined
+    ? process.env.EMAIL_VERIFY_DEV === 'true'
+    : process.env.ALLOW_DEV_TOKEN !== 'false'
 
 function mapDebt(row: DebtRow, ledger: LedgerRow[]) {
   const balance = computeBalance(row.principal, ledger)
@@ -331,6 +342,36 @@ app.delete<{ Body: { endpoint: string } }>('/api/v1/me/push-subscription', async
   return reply.status(204).send()
 })
 
+app.post<{ Body: { token: string; platform?: string } }>(
+  '/api/v1/me/fcm-token',
+  async (req, reply) => {
+    const { userId } = req as AuthedRequest
+    const token = req.body?.token?.trim()
+    if (!token) {
+      return reply.status(400).send(validationError({ token: 'FCM 토큰이 필요합니다.' }))
+    }
+    const platform = req.body?.platform?.trim() || 'android'
+    const id = randomUUID()
+    await query(
+      `INSERT INTO fcm_tokens (id, user_id, token, platform)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (token) DO UPDATE SET user_id = $2, platform = $4, updated_at = NOW()`,
+      [id, userId, token, platform],
+    )
+    return reply.status(201).send({ ok: true })
+  },
+)
+
+app.delete<{ Body: { token: string } }>('/api/v1/me/fcm-token', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const token = req.body?.token?.trim()
+  if (!token) {
+    return reply.status(400).send(validationError({ token: 'FCM 토큰이 필요합니다.' }))
+  }
+  await query('DELETE FROM fcm_tokens WHERE user_id = $1 AND token = $2', [userId, token])
+  return reply.status(204).send()
+})
+
 app.get('/api/v1/public/push-vapid-key', async (_req, reply) => {
   const key = process.env.VAPID_PUBLIC_KEY
   if (!key) {
@@ -341,58 +382,74 @@ app.get('/api/v1/public/push-vapid-key', async (_req, reply) => {
   return { public_key: key }
 })
 
-app.get('/api/v1/auth/google/start', async (_req, reply) => {
-  const state = createOAuthState('google')
-  const url = googleAuthUrl(state)
-  if (!url) {
-    return reply.status(503).send({
-      error: { code: 'OAUTH_NOT_CONFIGURED', message: 'Google 로그인이 설정되지 않았습니다.' },
-    })
-  }
-  return reply.redirect(url)
-})
+// client 쿼리 정규화: 'app'만 앱 딥링크, 그 외(미지정 포함)는 web(기존 동작).
+function resolveClient(client?: string): OAuthClient {
+  return client === 'app' ? 'app' : 'web'
+}
+
+app.get<{ Querystring: { client?: string } }>(
+  '/api/v1/auth/google/start',
+  async (req, reply) => {
+    const client = resolveClient(req.query.client)
+    const state = createOAuthState('google', client)
+    const url = googleAuthUrl(state)
+    if (!url) {
+      return reply.status(503).send({
+        error: { code: 'OAUTH_NOT_CONFIGURED', message: 'Google 로그인이 설정되지 않았습니다.' },
+      })
+    }
+    return reply.redirect(url)
+  },
+)
 
 app.get<{ Querystring: { code?: string; state?: string; error?: string } }>(
   '/api/v1/auth/google/callback',
   async (req, reply) => {
-    if (req.query.error) return reply.redirect(redirectWithError(req.query.error))
-    const { code, state } = req.query
-    if (!code || !state || !verifyOAuthState(state, 'google')) {
-      return reply.redirect(redirectWithError('invalid_state'))
+    const { code, state, error } = req.query
+    // state에서 client를 복원(실패해도 web 기본). 에러/검증 실패 시에도 올바른 곳으로 redirect.
+    const client = state ? verifyOAuthState(state, 'google') : null
+    if (error) return reply.redirect(redirectWithError(error, client ?? 'web'))
+    if (!code || !state || !client) {
+      return reply.redirect(redirectWithError('invalid_state', 'web'))
     }
     try {
       const jwt = await handleGoogleCallback(code)
-      return reply.redirect(redirectWithToken(jwt))
+      return reply.redirect(redirectWithToken(jwt, client))
     } catch {
-      return reply.redirect(redirectWithError('oauth_failed'))
+      return reply.redirect(redirectWithError('oauth_failed', client))
     }
   },
 )
 
-app.get('/api/v1/auth/kakao/start', async (_req, reply) => {
-  const state = createOAuthState('kakao')
-  const url = kakaoAuthUrl(state)
-  if (!url) {
-    return reply.status(503).send({
-      error: { code: 'OAUTH_NOT_CONFIGURED', message: 'Kakao 로그인이 설정되지 않았습니다.' },
-    })
-  }
-  return reply.redirect(url)
-})
+app.get<{ Querystring: { client?: string } }>(
+  '/api/v1/auth/kakao/start',
+  async (req, reply) => {
+    const client = resolveClient(req.query.client)
+    const state = createOAuthState('kakao', client)
+    const url = kakaoAuthUrl(state)
+    if (!url) {
+      return reply.status(503).send({
+        error: { code: 'OAUTH_NOT_CONFIGURED', message: 'Kakao 로그인이 설정되지 않았습니다.' },
+      })
+    }
+    return reply.redirect(url)
+  },
+)
 
 app.get<{ Querystring: { code?: string; state?: string; error?: string } }>(
   '/api/v1/auth/kakao/callback',
   async (req, reply) => {
-    if (req.query.error) return reply.redirect(redirectWithError(req.query.error))
-    const { code, state } = req.query
-    if (!code || !state || !verifyOAuthState(state, 'kakao')) {
-      return reply.redirect(redirectWithError('invalid_state'))
+    const { code, state, error } = req.query
+    const client = state ? verifyOAuthState(state, 'kakao') : null
+    if (error) return reply.redirect(redirectWithError(error, client ?? 'web'))
+    if (!code || !state || !client) {
+      return reply.redirect(redirectWithError('invalid_state', 'web'))
     }
     try {
       const jwt = await handleKakaoCallback(code)
-      return reply.redirect(redirectWithToken(jwt))
+      return reply.redirect(redirectWithToken(jwt, client))
     } catch {
-      return reply.redirect(redirectWithError('oauth_failed'))
+      return reply.redirect(redirectWithError('oauth_failed', client))
     }
   },
 )
