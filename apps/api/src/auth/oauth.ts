@@ -83,14 +83,33 @@ async function findOrCreateOAuthUser(
   providerUserId: string,
   email?: string | null,
 ): Promise<string> {
+  // 구글/카카오가 검증한 이메일이므로 자동 인증 대상으로 본다.
+  const normalizedEmail = email?.trim().toLowerCase() || null
+
   const existing = await queryOne<{ user_id: string }>(
     'SELECT user_id FROM oauth_accounts WHERE provider = $1 AND provider_user_id = $2',
     [provider, providerUserId],
   )
-  if (existing) return existing.user_id
+  if (existing) {
+    // 기존 유저가 아직 미인증이고, 저장된 이메일이 없거나 제공자 이메일과 같으면 자동 인증 백필.
+    if (normalizedEmail) {
+      await query(
+        `UPDATE users
+         SET email = COALESCE(email, $2), email_verified_at = NOW(), updated_at = NOW()
+         WHERE id = $1 AND email_verified_at IS NULL AND (email IS NULL OR email = $2)`,
+        [existing.user_id, normalizedEmail],
+      )
+    }
+    return existing.user_id
+  }
 
   const userId = randomUUID()
-  await query('INSERT INTO users (id, email) VALUES ($1, $2)', [userId, email ?? null])
+  // 제공자 이메일이 있으면 가입 시점에 인증 완료 상태로 저장.
+  await query(
+    `INSERT INTO users (id, email, email_verified_at)
+     VALUES ($1, $2, CASE WHEN $2::text IS NULL THEN NULL ELSE NOW() END)`,
+    [userId, normalizedEmail],
+  )
   await query(
     'INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id) VALUES ($1, $2, $3, $4)',
     [randomUUID(), userId, provider, providerUserId],

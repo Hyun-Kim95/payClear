@@ -2,7 +2,6 @@ import { Capacitor } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
 
 const TOKEN_KEY = 'payclear-token'
-export const DEV_TOKEN = 'dev-token'
 
 // 네이티브(Capacitor) 여부. 웹 빌드에서는 항상 false.
 const isNative = Capacitor.isNativePlatform()
