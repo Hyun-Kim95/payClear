@@ -47,6 +47,13 @@ export function clearToken() {
   sessionStorage.removeItem(TOKEN_KEY)
 }
 
+// 인증 만료/무효(401 UNAUTHORIZED) 시 호출되는 전역 핸들러.
+// App에서 react-router navigate로 /login 이동을 등록한다.
+let unauthorizedHandler: (() => void) | null = null
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  unauthorizedHandler = fn
+}
+
 export class ApiError extends Error {
   code: string
   status: number
@@ -71,12 +78,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (res.status === 204) return undefined as T
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new ApiError(
-      res.status,
-      body.error?.code ?? 'ERROR',
-      body.error?.message ?? '요청 실패',
-      body.error?.fields,
-    )
+    const code = body.error?.code ?? 'ERROR'
+    // 인증 토큰 만료/무효: 토큰을 비우고 로그인 화면으로 보낸다.
+    // (공유 PIN 오류 등 비인증 401은 code가 달라 제외된다)
+    if (res.status === 401 && code === 'UNAUTHORIZED') {
+      clearToken()
+      unauthorizedHandler?.()
+    }
+    throw new ApiError(res.status, code, body.error?.message ?? '요청 실패', body.error?.fields)
   }
   return body as T
 }

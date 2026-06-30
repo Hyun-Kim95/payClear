@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
-import { getToken, isNativePlatform, setToken } from './api/client'
+import { getToken, isNativePlatform, setToken, setUnauthorizedHandler } from './api/client'
 import { Layout } from './components/Layout'
 import { LockProvider } from './lock/LockProvider'
 import { LoginPage } from './pages/Login'
@@ -79,6 +79,20 @@ function useDeepLinkAuth() {
   }, [navigate])
 }
 
+/**
+ * API가 401(UNAUTHORIZED)을 반환하면(토큰 만료/무효) 로그인 화면으로 즉시 이동시킨다.
+ * 토큰은 client.request에서 이미 비워진 상태로 호출된다.
+ */
+function useUnauthorizedRedirect() {
+  const navigate = useNavigate()
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      navigate('/login', { replace: true })
+    })
+    return () => setUnauthorizedHandler(null)
+  }, [navigate])
+}
+
 export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('payclear-theme')
@@ -91,6 +105,7 @@ export default function App() {
   }, [theme])
 
   useDeepLinkAuth()
+  useUnauthorizedRedirect()
 
   return (
     <LockProvider>
