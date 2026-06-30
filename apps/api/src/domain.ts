@@ -31,12 +31,15 @@ export interface LedgerRow {
 }
 
 export function computeBalance(principal: number, entries: LedgerRow[]): number {
+  // principal·amount는 DB에서 BIGINT(문자열)로 올 수 있으므로 숫자 연산을 강제한다.
+  // (문자열이 섞이면 +가 문자열 연결이 되어 금액이 깨진다)
   return entries
     .filter((e) => !e.deleted_at)
     .reduce((bal, e) => {
-      if (e.type === 'payment') return bal - e.amount
-      return bal + e.amount
-    }, principal)
+      const amount = Number(e.amount)
+      if (e.type === 'payment') return bal - amount
+      return bal + amount
+    }, Number(principal))
 }
 
 export function computeDisplayLabel(

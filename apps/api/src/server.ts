@@ -80,7 +80,8 @@ const EMAIL_VERIFY_DEV =
     : process.env.ALLOW_DEV_TOKEN !== 'false'
 
 function mapDebt(row: DebtRow, ledger: LedgerRow[]) {
-  const balance = computeBalance(row.principal, ledger)
+  const principal = Number(row.principal)
+  const balance = computeBalance(principal, ledger)
   const status = deriveStatus(row.status, !!row.agreement_closed, balance)
   const display_label = computeDisplayLabel(status, !!row.agreement_closed, balance)
   return {
@@ -88,7 +89,7 @@ function mapDebt(row: DebtRow, ledger: LedgerRow[]) {
     contact_id: row.contact_id,
     contact: { display_name: row.contact_name },
     direction: row.direction,
-    principal: row.principal,
+    principal,
     occurred_on: row.occurred_on,
     reason: row.reason,
     due_on: row.due_on,

@@ -14,6 +14,13 @@ export async function registerNativePush(): Promise<FcmResult> {
     return { ok: false, message: '네이티브 앱에서만 사용할 수 있습니다.' }
   }
 
+  // Firebase(google-services.json) 미설정 빌드에서 PushNotifications.register()를 호출하면
+  // 안드로이드 네이티브에서 FirebaseApp 미초기화 예외가 발생해 앱이 종료된다(JS try/catch로 못 잡음).
+  // 따라서 FCM 설정이 끝난 빌드에서만 VITE_FCM_ENABLED=true로 켜서 등록을 시도한다.
+  if (import.meta.env.VITE_FCM_ENABLED !== 'true') {
+    return { ok: false, message: '푸시 알림은 준비 중입니다. 현재 버전에서는 이메일 알림을 이용해 주세요.' }
+  }
+
   try {
     const { PushNotifications } = await import('@capacitor/push-notifications')
 
