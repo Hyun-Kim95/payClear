@@ -847,24 +847,31 @@ app.patch<{
   }
   if (Object.keys(fields).length > 0) return reply.status(400).send(validationError(fields))
 
-  await query(
-    `UPDATE contacts SET
-      display_name = COALESCE($1, display_name),
-      note = CASE WHEN $2::text IS NULL THEN note ELSE $2 END,
-      payment_strategy = COALESCE($3, payment_strategy),
-      due_schedule_type = $4,
-      due_schedule_value = $5,
-      updated_at = NOW()
-     WHERE id = $6`,
-    [
-      body.display_name?.trim() ?? null,
-      body.note === undefined ? null : body.note,
-      body.payment_strategy ?? null,
-      nextScheduleType,
-      nextScheduleValue,
-      req.params.id,
-    ],
-  )
+  const sets = ['updated_at = NOW()']
+  const params: unknown[] = []
+  let n = 1
+
+  if (body.display_name !== undefined) {
+    sets.push(`display_name = $${n++}`)
+    params.push(body.display_name.trim())
+  }
+  if (body.note !== undefined) {
+    sets.push(`note = $${n++}`)
+    params.push(body.note)
+  }
+  if (body.payment_strategy !== undefined) {
+    sets.push(`payment_strategy = $${n++}`)
+    params.push(body.payment_strategy)
+  }
+  if (body.due_schedule_type !== undefined || body.due_schedule_value !== undefined) {
+    sets.push(`due_schedule_type = $${n++}`)
+    params.push(nextScheduleType)
+    sets.push(`due_schedule_value = $${n++}`)
+    params.push(nextScheduleValue)
+  }
+
+  params.push(req.params.id)
+  await query(`UPDATE contacts SET ${sets.join(', ')} WHERE id = $${n}`, params)
 
   const row = await queryOne('SELECT * FROM contacts WHERE id = $1', [req.params.id])
   return mapContactRow(row!)

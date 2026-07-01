@@ -29,6 +29,7 @@ export function ContactDetailPage() {
   const [editing, setEditing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const load = () => {
     if (!id) return
@@ -40,6 +41,8 @@ export function ContactDetailPage() {
         setNote(c.note ?? '')
         setScheduleType(c.due_schedule_type ?? 'none')
         setScheduleValue(c.due_schedule_value != null ? String(c.due_schedule_value) : '')
+        setError(null)
+        setFieldErrors({})
       })
       .catch((e: ApiError) => setError(e.message))
       .finally(() => setLoading(false))
@@ -59,11 +62,33 @@ export function ContactDetailPage() {
 
   const save = async () => {
     if (!id) return
+    const trimmedName = name.trim()
+    if (!trimmedName) {
+      setFieldErrors({ display_name: '이름을 입력해 주세요.' })
+      setError(null)
+      return
+    }
+
+    let parsedValue: number | null = null
+    if (scheduleType !== 'none') {
+      if (scheduleValue === '') {
+        setFieldErrors({ due_schedule: '주기 값을 선택해 주세요.' })
+        setError(null)
+        return
+      }
+      parsedValue = Number(scheduleValue)
+      if (!Number.isInteger(parsedValue)) {
+        setFieldErrors({ due_schedule: '주기 값을 선택해 주세요.' })
+        setError(null)
+        return
+      }
+    }
+
+    setError(null)
+    setFieldErrors({})
     try {
-      const parsedValue =
-        scheduleType === 'none' ? null : scheduleValue === '' ? null : Number(scheduleValue)
       await api.updateContact(id, {
-        display_name: name.trim(),
+        display_name: trimmedName,
         note: note.trim() || null,
         due_schedule_type: scheduleType,
         due_schedule_value: parsedValue,
@@ -71,7 +96,12 @@ export function ContactDetailPage() {
       setEditing(false)
       load()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : '저장 실패')
+      if (err instanceof ApiError) {
+        setError(err.message)
+        if (err.fields) setFieldErrors(err.fields)
+      } else {
+        setError('저장에 실패했습니다. 네트워크 연결을 확인해 주세요.')
+      }
     }
   }
 
@@ -101,6 +131,7 @@ export function ContactDetailPage() {
           <label className="field">
             <span>이름</span>
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+            {fieldErrors.display_name && <p className="field-error">{fieldErrors.display_name}</p>}
           </label>
           <label className="field">
             <span>메모</span>
@@ -164,13 +195,15 @@ export function ContactDetailPage() {
                 onChange={(e) => setScheduleValue(e.target.value)}
               >
                 {WEEKDAY_LABELS.map((label, i) => (
-                  <option key={i} value={i}>
+                  <option key={i} value={String(i)}>
                     {label}요일
                   </option>
                 ))}
               </select>
             )}
+            {fieldErrors.due_schedule && <p className="field-error">{fieldErrors.due_schedule}</p>}
           </fieldset>
+          {error && <p className="form-error">{error}</p>}
           <div className="action-row">
             <button type="button" className="btn btn--primary" onClick={() => void save()}>
               저장
@@ -231,7 +264,7 @@ export function ContactDetailPage() {
           </Link>
         ))
       )}
-      {error && <p className="form-error">{error}</p>}
+      {error && !editing && <p className="form-error">{error}</p>}
     </div>
   )
 }
