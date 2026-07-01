@@ -186,15 +186,14 @@ export function buildUpcomingDue(
       const key = `${contact.id}|${dueOn}|${direction}`
       if (covered.has(key)) continue
 
-      const balance = debts
-        .filter(
-          (d) =>
-            d.contact_id === contact.id &&
-            d.direction === direction &&
-            d.status === 'active' &&
-            d.balance > 0,
-        )
-        .reduce((sum, d) => sum + d.balance, 0)
+      const matchingDebts = debts.filter(
+        (d) =>
+          d.contact_id === contact.id &&
+          d.direction === direction &&
+          d.status === 'active' &&
+          d.balance > 0,
+      )
+      const balance = matchingDebts.reduce((sum, d) => sum + d.balance, 0)
       if (balance <= 0) continue
 
       items.push({
@@ -204,6 +203,8 @@ export function buildUpcomingDue(
         due_on: dueOn,
         balance,
         direction,
+        // 채무가 1건이면 상세 링크용 (구버전 클라이언트 호환)
+        debt_id: matchingDebts.length === 1 ? matchingDebts[0].id : undefined,
         schedule_label: formatDueScheduleLabel(
           contact.due_schedule_type,
           contact.due_schedule_value,

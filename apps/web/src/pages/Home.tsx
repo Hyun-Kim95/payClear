@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
-import { api, formatKRW, isUnauthorizedError, type Summary } from '../api/client'
+import { api, formatKRW, isUnauthorizedError, type Summary, type UpcomingDueItem } from '../api/client'
+
+function upcomingDueLink(u: UpcomingDueItem): string {
+  if (u.kind === 'contact_schedule') {
+    if (u.debt_id) return `/debts/${u.debt_id}`
+    return `/contacts/${u.contact_id}`
+  }
+  if (u.debt_id) return `/debts/${u.debt_id}`
+  if (u.contact_id) return `/contacts/${u.contact_id}`
+  return '/debts'
+}
 
 export function HomePage() {
   const [data, setData] = useState<Summary | null>(null)
@@ -69,7 +79,7 @@ export function HomePage() {
         ) : (
           data.upcoming_due.map((u) => {
             const dirLabel = u.direction === 'lent' ? '받을' : '갚을'
-            const to = u.kind === 'debt' && u.debt_id ? `/debts/${u.debt_id}` : `/contacts/${u.contact_id}`
+            const to = upcomingDueLink(u)
             return (
               <Link
                 key={`${u.kind}-${u.debt_id ?? u.contact_id}-${u.direction}-${u.due_on}`}
