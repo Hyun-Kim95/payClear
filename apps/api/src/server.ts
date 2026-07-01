@@ -76,7 +76,11 @@ if (process.env.SEED_DEMO === 'true') {
 }
 
 const app = Fastify({ logger: true })
-await app.register(cors, { origin: true })
+await app.register(cors, {
+  origin: true,
+  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+})
 
 type AuthedRequest = { userId: string }
 

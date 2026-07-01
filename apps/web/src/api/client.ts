@@ -70,6 +70,15 @@ export function isUnauthorizedError(err: unknown): err is ApiError {
   return err instanceof ApiError && err.status === 401 && err.code === 'UNAUTHORIZED'
 }
 
+function parseApiErrorMessage(body: Record<string, unknown>): string {
+  const nested = body.error
+  if (nested && typeof nested === 'object' && 'message' in nested && typeof nested.message === 'string') {
+    return nested.message
+  }
+  if (typeof body.message === 'string') return body.message
+  return '요청 실패'
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken()
   const headers: Record<string, string> = {
@@ -82,14 +91,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (res.status === 204) return undefined as T
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
-    const code = body.error?.code ?? 'ERROR'
+    const errObj = typeof body.error === 'object' && body.error ? body.error : null
+    const code = (errObj?.code as string | undefined) ?? (typeof body.code === 'string' ? body.code : 'ERROR')
     // 인증 토큰 만료/무효: 토큰을 비우고 로그인 화면으로 보낸다.
     // (공유 PIN 오류 등 비인증 401은 code가 달라 제외된다)
     if (res.status === 401 && code === 'UNAUTHORIZED') {
       clearToken()
       unauthorizedHandler?.()
     }
-    throw new ApiError(res.status, code, body.error?.message ?? '요청 실패', body.error?.fields)
+    throw new ApiError(
+      res.status,
+      code,
+      parseApiErrorMessage(body),
+      errObj?.fields as Record<string, string> | undefined,
+    )
   }
   return body as T
 }

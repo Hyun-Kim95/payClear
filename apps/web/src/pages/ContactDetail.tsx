@@ -99,8 +99,10 @@ export function ContactDetailPage() {
       if (err instanceof ApiError) {
         setError(err.message)
         if (err.fields) setFieldErrors(err.fields)
+      } else if (err instanceof Error && /failed to fetch|networkerror|load failed/i.test(err.message)) {
+        setError('서버에 연결하지 못했습니다. 앱을 다시 시작하거나 잠시 후 시도해 주세요.')
       } else {
-        setError('저장에 실패했습니다. 네트워크 연결을 확인해 주세요.')
+        setError(err instanceof Error ? err.message : '저장에 실패했습니다.')
       }
     }
   }
