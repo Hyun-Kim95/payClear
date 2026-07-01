@@ -127,18 +127,25 @@ export interface Debt {
   is_split?: boolean
 }
 
+export type UpcomingDueKind = 'debt' | 'contact_schedule'
+
+export interface UpcomingDueItem {
+  kind: UpcomingDueKind
+  due_on: string
+  contact_name: string
+  contact_id: string
+  balance: number
+  direction: 'lent' | 'borrowed'
+  debt_id?: string
+  schedule_label?: string | null
+}
+
 export interface Summary {
   total_receivable: number
   total_payable: number
   active_count: number
   overdue_count: number
-  upcoming_due: Array<{
-    debt_id: string
-    contact_name: string
-    due_on: string
-    balance: number
-    direction: string
-  }>
+  upcoming_due: UpcomingDueItem[]
 }
 
 export interface DebtDetail extends Debt {

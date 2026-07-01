@@ -60,18 +60,35 @@ export function HomePage() {
       <section>
         <div className="section-head">
           <h2>상환 예정</h2>
+          <span className="muted" style={{ fontSize: '0.8125rem' }}>
+            이번 달
+          </span>
         </div>
         {data.upcoming_due.length === 0 ? (
-          <p className="muted">예정된 상환일이 없습니다.</p>
+          <p className="muted">이번 달 예정된 상환일이 없습니다.</p>
         ) : (
-          data.upcoming_due.map((u) => (
-            <Link key={u.debt_id} to={`/debts/${u.debt_id}`} className="list-row">
-              <span>{u.contact_name}</span>
-              <span>
-                {formatKRW(u.balance)} · {u.due_on}
-              </span>
-            </Link>
-          ))
+          data.upcoming_due.map((u) => {
+            const dirLabel = u.direction === 'lent' ? '받을' : '갚을'
+            const to = u.kind === 'debt' && u.debt_id ? `/debts/${u.debt_id}` : `/contacts/${u.contact_id}`
+            return (
+              <Link
+                key={`${u.kind}-${u.debt_id ?? u.contact_id}-${u.direction}-${u.due_on}`}
+                to={to}
+                className="list-row"
+              >
+                <span>
+                  {u.contact_name}
+                  <span className="muted" style={{ marginLeft: '0.35rem', fontSize: '0.8125rem' }}>
+                    {dirLabel}
+                    {u.schedule_label ? ` · ${u.schedule_label}` : ''}
+                  </span>
+                </span>
+                <span>
+                  {formatKRW(u.balance)} · {u.due_on}
+                </span>
+              </Link>
+            )
+          })
         )}
       </section>
 

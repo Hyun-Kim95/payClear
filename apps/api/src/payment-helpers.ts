@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import { query, queryOne } from './db/pool.js'
 import { computeBalance, type DebtRow } from './domain.js'
 import { getLedger, refreshDebtStatus } from './debt-helpers.js'
-import { validateDateOnOrBeforeToday, validatePaymentAmount } from './validate.js'
+import { validateDateOnOrBeforeToday, validatePaymentAmount, todayKST } from './validate.js'
 
 export type PaymentStrategy = 'oldest_first' | 'largest_first' | 'newest_first' | 'smallest_first'
 
@@ -60,6 +60,165 @@ export function contactScheduleMatchesDate(
   if (type === 'monthly') return Number(isoDate.slice(8, 10)) === value
   if (type === 'weekly') return weekdayKST(isoDate) === value
   return false
+}
+
+/** KST 기준 해당 월 1일~말일 */
+export function monthBoundsKST(fromIso = todayKST()): {
+  start: string
+  end: string
+  year: number
+  month: number
+} {
+  const [year, month] = fromIso.split('-').map(Number)
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const mm = String(month).padStart(2, '0')
+  return {
+    year,
+    month,
+    start: `${year}-${mm}-01`,
+    end: `${year}-${mm}-${String(lastDay).padStart(2, '0')}`,
+  }
+}
+
+function addDaysIso(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d + days))
+  const yy = dt.getUTCFullYear()
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(dt.getUTCDate()).padStart(2, '0')
+  return `${yy}-${mm}-${dd}`
+}
+
+function clampMonthlyDay(year: number, month: number, day: number): string {
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const d = Math.min(day, lastDay)
+  return `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+}
+
+/** 이번 달 상환 예정일 1개 (매월: 해당 일, 매주: 미납이면 이번 달 첫 지난 회차·없으면 다음 회차) */
+export function contactScheduleDueInMonth(
+  type: DueScheduleType,
+  value: number,
+  year: number,
+  month: number,
+  today: string,
+): string | null {
+  if (type === 'none') return null
+  if (type === 'monthly') return clampMonthlyDay(year, month, value)
+
+  const { start, end } = monthBoundsKST(
+    `${year}-${String(month).padStart(2, '0')}-01`,
+  )
+  const dates: string[] = []
+  let cur = start
+  while (cur <= end) {
+    if (weekdayKST(cur) === value) dates.push(cur)
+    cur = addDaysIso(cur, 1)
+  }
+  const past = dates.filter((d) => d <= today)
+  if (past.length > 0) return past[0]
+  const future = dates.filter((d) => d >= today)
+  return future[0] ?? null
+}
+
+export type UpcomingDueKind = 'debt' | 'contact_schedule'
+
+export interface UpcomingDueItem {
+  kind: UpcomingDueKind
+  due_on: string
+  contact_name: string
+  contact_id: string
+  balance: number
+  direction: 'lent' | 'borrowed'
+  debt_id?: string
+  schedule_label?: string | null
+}
+
+export function buildUpcomingDue(
+  debts: Array<{
+    id: string
+    contact_id: string
+    contact_name: string
+    direction: 'lent' | 'borrowed'
+    due_on: string | null
+    status: string
+    balance: number
+  }>,
+  contacts: Array<{
+    id: string
+    display_name: string
+    due_schedule_type: DueScheduleType
+    due_schedule_value: number | null
+  }>,
+  today = todayKST(),
+): UpcomingDueItem[] {
+  const { start, end, year, month } = monthBoundsKST(today)
+  const items: UpcomingDueItem[] = []
+  const covered = new Set<string>()
+
+  for (const debt of debts) {
+    if (!debt.due_on || debt.status !== 'active' || debt.balance <= 0) continue
+    if (debt.due_on < start || debt.due_on > end) continue
+    items.push({
+      kind: 'debt',
+      debt_id: debt.id,
+      contact_id: debt.contact_id,
+      contact_name: debt.contact_name,
+      due_on: debt.due_on,
+      balance: debt.balance,
+      direction: debt.direction,
+    })
+    covered.add(`${debt.contact_id}|${debt.due_on}|${debt.direction}`)
+  }
+
+  for (const contact of contacts) {
+    if (contact.due_schedule_type === 'none' || contact.due_schedule_value == null) continue
+    const dueOn = contactScheduleDueInMonth(
+      contact.due_schedule_type,
+      contact.due_schedule_value,
+      year,
+      month,
+      today,
+    )
+    if (!dueOn || dueOn < start || dueOn > end) continue
+
+    for (const direction of ['lent', 'borrowed'] as const) {
+      const key = `${contact.id}|${dueOn}|${direction}`
+      if (covered.has(key)) continue
+
+      const balance = debts
+        .filter(
+          (d) =>
+            d.contact_id === contact.id &&
+            d.direction === direction &&
+            d.status === 'active' &&
+            d.balance > 0,
+        )
+        .reduce((sum, d) => sum + d.balance, 0)
+      if (balance <= 0) continue
+
+      items.push({
+        kind: 'contact_schedule',
+        contact_id: contact.id,
+        contact_name: contact.display_name,
+        due_on: dueOn,
+        balance,
+        direction,
+        schedule_label: formatDueScheduleLabel(
+          contact.due_schedule_type,
+          contact.due_schedule_value,
+        ),
+      })
+    }
+  }
+
+  items.sort(
+    (a, b) =>
+      a.due_on.localeCompare(b.due_on) ||
+      a.contact_name.localeCompare(b.contact_name, 'ko') ||
+      a.direction.localeCompare(b.direction),
+  )
+  return items.slice(0, 5)
 }
 
 export interface AllocatePaymentResult {

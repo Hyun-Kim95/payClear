@@ -59,6 +59,7 @@ import {
 import { runDueReminders } from './notify/send.js'
 import {
   allocateContactPayment,
+  buildUpcomingDue,
   isValidPaymentStrategy,
   mapContactRow,
   validateDueSchedule,
@@ -490,51 +491,65 @@ app.get<{ Params: { token: string }; Querystring: { pin?: string } }>(
 
 app.get('/api/v1/summary', async (req) => {
   const { userId } = req as AuthedRequest
-  const res = await query<DebtRow>(
-    `SELECT d.*, c.display_name AS contact_name FROM debts d
+  const [debtsRes, contactsRes] = await Promise.all([
+    query<DebtRow>(
+      `SELECT d.*, c.display_name AS contact_name FROM debts d
      JOIN contacts c ON c.id = d.contact_id
      WHERE d.user_id = $1 AND d.status != 'archived'`,
-    [userId],
-  )
+      [userId],
+    ),
+    query<{
+      id: string
+      display_name: string
+      due_schedule_type: DueScheduleType
+      due_schedule_value: number | null
+    }>(
+      `SELECT id, display_name, due_schedule_type, due_schedule_value
+       FROM contacts WHERE user_id = $1`,
+      [userId],
+    ),
+  ])
 
   let totalReceivable = 0
   let totalPayable = 0
   let overdueCount = 0
   let activeCount = 0
-  const upcoming: Array<{
-    debt_id: string
+  const debtInputs: Array<{
+    id: string
+    contact_id: string
     contact_name: string
-    due_on: string
+    direction: 'lent' | 'borrowed'
+    due_on: string | null
+    status: string
     balance: number
-    direction: string
   }> = []
 
-  for (const raw of res.rows) {
+  for (const raw of debtsRes.rows) {
     const row = raw as unknown as DebtRow
     const debt = await mapDebtAsync(row)
     if (debt.status === 'active') activeCount++
     if (debt.direction === 'lent') totalReceivable += debt.balance
     else totalPayable += debt.balance
     if (debt.is_overdue) overdueCount++
-    if (debt.due_on && debt.status === 'active' && debt.balance > 0) {
-      upcoming.push({
-        debt_id: debt.id,
-        contact_name: debt.contact.display_name,
-        due_on: debt.due_on,
-        balance: debt.balance,
-        direction: debt.direction,
-      })
-    }
+    debtInputs.push({
+      id: debt.id,
+      contact_id: debt.contact_id!,
+      contact_name: debt.contact.display_name,
+      direction: debt.direction,
+      due_on: debt.due_on,
+      status: debt.status,
+      balance: debt.balance,
+    })
   }
 
-  upcoming.sort((a, b) => a.due_on.localeCompare(b.due_on))
+  const upcoming_due = buildUpcomingDue(debtInputs, contactsRes.rows)
 
   return {
     total_receivable: totalReceivable,
     total_payable: totalPayable,
     active_count: activeCount,
     overdue_count: overdueCount,
-    upcoming_due: upcoming.slice(0, 5),
+    upcoming_due,
   }
 })
 
