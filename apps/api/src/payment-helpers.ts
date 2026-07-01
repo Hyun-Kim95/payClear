@@ -17,11 +17,55 @@ export function isValidPaymentStrategy(value: string): value is PaymentStrategy 
   return (PAYMENT_STRATEGIES as string[]).includes(value)
 }
 
+export type DueScheduleType = 'none' | 'monthly' | 'weekly'
+
+export const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'] as const
+
+export function formatDueScheduleLabel(
+  type: DueScheduleType | undefined,
+  value: number | null | undefined,
+): string | null {
+  if (!type || type === 'none' || value == null) return null
+  if (type === 'monthly') return `매월 ${value}일`
+  if (type === 'weekly') return `매주 ${WEEKDAY_LABELS[value] ?? value}요일`
+  return null
+}
+
+export function validateDueSchedule(
+  type: DueScheduleType | undefined,
+  value: number | null | undefined,
+): string | null {
+  if (!type || type === 'none') {
+    if (value != null) return '주기 없음일 때 값을 지정할 수 없습니다.'
+    return null
+  }
+  if (value == null) return '주기 값을 선택해 주세요.'
+  if (type === 'monthly' && (value < 1 || value > 31)) return '매월 1~31일을 선택해 주세요.'
+  if (type === 'weekly' && (value < 0 || value > 6)) return '요일을 선택해 주세요.'
+  return null
+}
+
+/** KST 기준 날짜(YYYY-MM-DD)의 요일(0=일) */
+export function weekdayKST(isoDate: string): number {
+  const [y, m, d] = isoDate.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay()
+}
+
+export function contactScheduleMatchesDate(
+  type: DueScheduleType,
+  value: number | null,
+  isoDate: string,
+): boolean {
+  if (type === 'none' || value == null) return false
+  if (type === 'monthly') return Number(isoDate.slice(8, 10)) === value
+  if (type === 'weekly') return weekdayKST(isoDate) === value
+  return false
+}
+
 export interface AllocatePaymentResult {
   allocated_total: number
   unallocated: number
   payments: Array<{ debt_id: string; amount: number; entry_id: string; reason: string }>
-  skipped_split_count: number
 }
 
 interface DebtWithBalance {
@@ -50,14 +94,9 @@ export async function allocateContactPayment(
   )
 
   const withBalance: DebtWithBalance[] = []
-  let skippedSplit = 0
 
   for (const raw of debtsRes.rows) {
-    const row = raw as unknown as DebtRow & { is_split?: boolean }
-    if (row.is_split) {
-      skippedSplit++
-      continue
-    }
+    const row = raw as unknown as DebtRow
     const ledger = await getLedger(row.id)
     const balance = computeBalance(Number(row.principal), ledger)
     if (balance <= 0) continue
@@ -116,15 +155,20 @@ export async function allocateContactPayment(
     allocated_total: amount - remaining,
     unallocated: remaining,
     payments,
-    skipped_split_count: skippedSplit,
   }
 }
 
 export function mapContactRow(row: Record<string, unknown>) {
+  const scheduleType = (row.due_schedule_type as DueScheduleType) ?? 'none'
+  const scheduleValue =
+    row.due_schedule_value == null ? null : Number(row.due_schedule_value)
   return {
     id: row.id as string,
     display_name: row.display_name as string,
     note: (row.note as string) ?? null,
     payment_strategy: (row.payment_strategy as PaymentStrategy) ?? 'oldest_first',
+    due_schedule_type: scheduleType,
+    due_schedule_value: scheduleValue,
+    due_schedule_label: formatDueScheduleLabel(scheduleType, scheduleValue),
   }
 }

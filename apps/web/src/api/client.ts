@@ -112,25 +112,6 @@ export interface Debt {
   is_split?: boolean
 }
 
-export interface DebtParticipant {
-  id: string
-  label: string
-  contact_id: string | null
-  share_amount: number
-  paid_amount: number
-  balance: number
-  completed: boolean
-}
-
-export interface Installment {
-  id: string
-  participant_id: string
-  participant_label: string
-  seq: number
-  due_on: string
-  amount: number
-}
-
 export interface Summary {
   total_receivable: number
   total_payable: number
@@ -154,8 +135,6 @@ export interface DebtDetail extends Debt {
     occurred_on: string
     note: string | null
   }>
-  participants?: DebtParticipant[]
-  installments?: Installment[]
 }
 
 export type PaymentStrategy = 'oldest_first' | 'largest_first' | 'newest_first' | 'smallest_first'
@@ -167,20 +146,22 @@ export const PAYMENT_STRATEGY_LABELS: Record<PaymentStrategy, string> = {
   smallest_first: '잔액 작은 순',
 }
 
+export type DueScheduleType = 'none' | 'monthly' | 'weekly'
+
+export const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'] as const
+
 export interface Contact {
   id: string
   display_name: string
   note?: string | null
   payment_strategy?: PaymentStrategy
+  due_schedule_type?: DueScheduleType
+  due_schedule_value?: number | null
+  due_schedule_label?: string | null
 }
 
 export interface ContactDetail extends Contact {
   debts: Debt[]
-}
-
-export interface SplitInput {
-  participants: Array<{ label: string; contact_id?: string | null }>
-  installment: { count: number; interval_months: number; start_on: string }
 }
 
 export interface CreateDebtInput {
@@ -191,14 +172,12 @@ export interface CreateDebtInput {
   occurred_on: string
   reason: string
   due_on?: string | null
-  split?: SplitInput
 }
 
 export interface PaymentInput {
   amount: number
   occurred_on: string
   note?: string | null
-  participant_id?: string
 }
 
 export interface AdjustmentInput {
@@ -310,6 +289,8 @@ export const api = {
       display_name?: string
       note?: string | null
       payment_strategy?: PaymentStrategy
+      due_schedule_type?: DueScheduleType
+      due_schedule_value?: number | null
     },
   ) => request<Contact>(`/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   allocateContactPayment: (
@@ -325,7 +306,6 @@ export const api = {
       allocated_total: number
       unallocated: number
       payments: Array<{ debt_id: string; amount: number; entry_id: string; reason: string }>
-      skipped_split_count: number
     }>(`/contacts/${contactId}/allocate-payment`, {
       method: 'POST',
       body: JSON.stringify(input),

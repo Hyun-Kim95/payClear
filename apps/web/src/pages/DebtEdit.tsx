@@ -84,13 +84,13 @@ export function DebtEditPage() {
             ))}
           </select>
         </label>
-        <label className="field">
+        <label className="field field--readonly">
           <span>방향</span>
-          <input className="input" disabled value={debt.direction === 'lent' ? '빌려줌' : '빌림'} />
+          <input className="input" disabled readOnly value={debt.direction === 'lent' ? '빌려줌' : '빌림'} />
         </label>
-        <label className="field">
+        <label className="field field--readonly">
           <span>원금</span>
-          <input className="input" disabled value={debt.principal.toLocaleString('ko-KR')} />
+          <input className="input" disabled readOnly value={debt.principal.toLocaleString('ko-KR')} />
         </label>
         <label className="field">
           <span>발생일</span>

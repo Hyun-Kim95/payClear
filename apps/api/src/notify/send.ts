@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer'
 import { cert, getApps, initializeApp } from 'firebase-admin/app'
 import { getMessaging } from 'firebase-admin/messaging'
 import { query } from '../db/pool.js'
+import { contactScheduleMatchesDate, type DueScheduleType } from '../payment-helpers.js'
 
 function todayKST(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' })
@@ -228,48 +229,71 @@ export async function runDueReminders(dryRun = false): Promise<ReminderRunResult
       await deliver(u, title, body)
     }
 
-    // 2) 분할 채무: installments.due_on 기준(미납 회차, 참여자 잔액 > 0)
-    const instRes = await query<{
-      due_on: string
-      amount: number
-      seq: number
-      participant_label: string
-      share_amount: number
-      paid: number
-      contact_name: string
-      direction: string
-    }>(`
-      SELECT i.due_on::text AS due_on, i.amount, i.seq,
-             p.label AS participant_label, p.share_amount,
-             c.display_name AS contact_name, d.direction,
-             COALESCE(SUM(CASE WHEN le.type = 'payment' AND le.deleted_at IS NULL THEN le.amount END), 0) AS paid
-      FROM installments i
-      JOIN debts d ON d.id = i.debt_id
-      JOIN contacts c ON c.id = d.contact_id
-      JOIN debt_participants p ON p.id = i.participant_id
-      LEFT JOIN ledger_entries le ON le.participant_id = p.id
-      WHERE d.user_id = $1 AND d.status = 'active' AND d.is_split = TRUE
-      GROUP BY i.id, i.due_on, i.amount, i.seq, p.label, p.share_amount, c.display_name, d.direction
-    `, [u.user_id])
+    // 2) 상대별 정기 상환 주기 (매월/매주)
+    const scheduleRes = await query<{
+      id: string
+      display_name: string
+      due_schedule_type: DueScheduleType
+      due_schedule_value: number
+    }>(
+      `SELECT id, display_name, due_schedule_type, due_schedule_value
+       FROM contacts
+       WHERE user_id = $1 AND due_schedule_type IN ('monthly', 'weekly')`,
+      [u.user_id],
+    )
 
-    for (const inst of instRes.rows) {
-      const dueOn = inst.due_on.slice(0, 10)
-      const isD1 = u.remind_d1 && dueOn === tomorrow
-      const isD0 = u.remind_d0 && dueOn === today
+    for (const contact of scheduleRes.rows) {
+      const isD1 =
+        u.remind_d1 &&
+        contactScheduleMatchesDate(
+          contact.due_schedule_type,
+          contact.due_schedule_value,
+          tomorrow,
+        )
+      const isD0 =
+        u.remind_d0 &&
+        contactScheduleMatchesDate(
+          contact.due_schedule_type,
+          contact.due_schedule_value,
+          today,
+        )
       if (!isD1 && !isD0) {
         skipped++
         continue
       }
-      const remaining = Number(inst.share_amount) - Number(inst.paid)
-      if (remaining <= 0) {
+
+      const debtsRes = await query<{
+        id: string
+        direction: string
+        principal: number
+      }>(
+        `SELECT id, direction, principal FROM debts
+         WHERE contact_id = $1 AND user_id = $2 AND status = 'active'`,
+        [contact.id, u.user_id],
+      )
+
+      let totalBalance = 0
+      for (const debt of debtsRes.rows) {
+        const ledgerRes = await query<{ type: string; amount: number; deleted_at: unknown }>(
+          `SELECT type, amount, deleted_at FROM ledger_entries WHERE debt_id = $1`,
+          [debt.id],
+        )
+        let balance = Number(debt.principal)
+        for (const e of ledgerRes.rows) {
+          if (e.deleted_at) continue
+          if (e.type === 'payment') balance -= Number(e.amount)
+          else balance += Number(e.amount)
+        }
+        if (balance > 0) totalBalance += balance
+      }
+      if (totalBalance <= 0) {
         skipped++
         continue
       }
 
       const label = isD0 ? '오늘' : '내일'
-      const dir = inst.direction === 'lent' ? '받을' : '갚을'
-      const title = `payClear — ${label} 할부 상환 예정`
-      const body = `${inst.contact_name} · ${inst.participant_label} ${inst.seq}회차 ${dir} ${Number(inst.amount).toLocaleString('ko-KR')}원 (${dueOn})`
+      const title = `payClear — ${label} 정기 상환일`
+      const body = `${contact.display_name} · 상환 예정 합계 ${totalBalance.toLocaleString('ko-KR')}원`
 
       if (dryRun) {
         console.log(`[DRY_RUN] user=${u.user_id} ${title}: ${body}`)

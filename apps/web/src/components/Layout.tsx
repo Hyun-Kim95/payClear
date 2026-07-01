@@ -29,7 +29,7 @@ export function Layout({ onToggleTheme, theme }: { onToggleTheme: () => void; th
           payClear
         </Link>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <button type="button" className="btn btn--ghost" style={{ padding: '0.4rem 0.6rem' }} onClick={onToggleTheme}>
+          <button type="button" className="btn btn--ghost theme-toggle" onClick={onToggleTheme}>
             {theme === 'light' ? '🌙' : '☀️'}
           </button>
         </div>

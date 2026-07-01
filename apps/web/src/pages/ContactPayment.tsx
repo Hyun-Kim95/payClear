@@ -45,7 +45,7 @@ export function ContactPaymentPage() {
   const totalBalance = useMemo(() => {
     if (!contact) return 0
     return contact.debts
-      .filter((d) => d.status === 'active' && !d.is_split)
+      .filter((d) => d.status === 'active')
       .reduce((sum, d) => sum + Math.max(0, d.balance), 0)
   }, [contact])
 

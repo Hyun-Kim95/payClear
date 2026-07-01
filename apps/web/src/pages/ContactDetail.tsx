@@ -1,11 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { api, ApiError, formatKRW, PAYMENT_STRATEGY_LABELS, type ContactDetail } from '../api/client'
+import {
+  api,
+  ApiError,
+  formatKRW,
+  PAYMENT_STRATEGY_LABELS,
+  WEEKDAY_LABELS,
+  type ContactDetail,
+  type DueScheduleType,
+} from '../api/client'
 
 type PaymentResult = {
   allocated_total: number
   unallocated: number
-  skipped_split_count: number
   payments: Array<{ debt_id: string; amount: number; reason: string }>
 }
 
@@ -17,6 +24,8 @@ export function ContactDetailPage() {
   const [contact, setContact] = useState<ContactDetail | null>(null)
   const [name, setName] = useState('')
   const [note, setNote] = useState('')
+  const [scheduleType, setScheduleType] = useState<DueScheduleType>('none')
+  const [scheduleValue, setScheduleValue] = useState('')
   const [editing, setEditing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -29,6 +38,8 @@ export function ContactDetailPage() {
         setContact(c)
         setName(c.display_name)
         setNote(c.note ?? '')
+        setScheduleType(c.due_schedule_type ?? 'none')
+        setScheduleValue(c.due_schedule_value != null ? String(c.due_schedule_value) : '')
       })
       .catch((e: ApiError) => setError(e.message))
       .finally(() => setLoading(false))
@@ -39,7 +50,7 @@ export function ContactDetailPage() {
   const allocatableBalance = useMemo(() => {
     if (!contact) return 0
     return contact.debts
-      .filter((d) => d.status === 'active' && !d.is_split)
+      .filter((d) => d.status === 'active')
       .reduce((sum, d) => sum + Math.max(0, d.balance), 0)
   }, [contact])
 
@@ -49,7 +60,14 @@ export function ContactDetailPage() {
   const save = async () => {
     if (!id) return
     try {
-      await api.updateContact(id, { display_name: name.trim(), note: note.trim() || null })
+      const parsedValue =
+        scheduleType === 'none' ? null : scheduleValue === '' ? null : Number(scheduleValue)
+      await api.updateContact(id, {
+        display_name: name.trim(),
+        note: note.trim() || null,
+        due_schedule_type: scheduleType,
+        due_schedule_value: parsedValue,
+      })
       setEditing(false)
       load()
     } catch (err) {
@@ -88,6 +106,71 @@ export function ContactDetailPage() {
             <span>메모</span>
             <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
+          <fieldset className="field">
+            <legend>정기 상환 주기</legend>
+            <label className="radio-row">
+              <input
+                type="radio"
+                name="scheduleType"
+                checked={scheduleType === 'none'}
+                onChange={() => {
+                  setScheduleType('none')
+                  setScheduleValue('')
+                }}
+              />
+              없음
+            </label>
+            <label className="radio-row">
+              <input
+                type="radio"
+                name="scheduleType"
+                checked={scheduleType === 'monthly'}
+                onChange={() => {
+                  setScheduleType('monthly')
+                  setScheduleValue('1')
+                }}
+              />
+              매월
+            </label>
+            {scheduleType === 'monthly' && (
+              <select
+                className="input"
+                value={scheduleValue}
+                onChange={(e) => setScheduleValue(e.target.value)}
+              >
+                {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                  <option key={day} value={day}>
+                    {day}일
+                  </option>
+                ))}
+              </select>
+            )}
+            <label className="radio-row">
+              <input
+                type="radio"
+                name="scheduleType"
+                checked={scheduleType === 'weekly'}
+                onChange={() => {
+                  setScheduleType('weekly')
+                  setScheduleValue('1')
+                }}
+              />
+              매주
+            </label>
+            {scheduleType === 'weekly' && (
+              <select
+                className="input"
+                value={scheduleValue}
+                onChange={(e) => setScheduleValue(e.target.value)}
+              >
+                {WEEKDAY_LABELS.map((label, i) => (
+                  <option key={i} value={i}>
+                    {label}요일
+                  </option>
+                ))}
+              </select>
+            )}
+          </fieldset>
           <div className="action-row">
             <button type="button" className="btn btn--primary" onClick={() => void save()}>
               저장
@@ -103,16 +186,17 @@ export function ContactDetailPage() {
           <p className="muted" style={{ marginTop: '0.5rem' }}>
             기본 배분: {strategyLabel}
           </p>
-          {allocatableBalance > 0 && (
-            <Link
-              to={`/contacts/${id}/payment`}
-              className="btn btn--primary btn--block"
-              style={{ marginTop: '0.75rem' }}
-            >
-              일괄 상환
-            </Link>
+          {contact.due_schedule_label && (
+            <p className="muted" style={{ marginTop: '0.25rem' }}>
+              정기 상환: {contact.due_schedule_label}
+            </p>
           )}
           <div className="action-row" style={{ marginTop: '0.75rem' }}>
+            {allocatableBalance > 0 && (
+              <Link to={`/contacts/${id}/payment`} className="btn btn--primary action-row__span">
+                일괄 상환
+              </Link>
+            )}
             <button type="button" className="btn btn--secondary" onClick={() => setEditing(true)}>
               수정
             </button>
@@ -128,8 +212,6 @@ export function ContactDetailPage() {
           <p style={{ margin: 0 }}>
             {formatKRW(paymentResult.allocated_total)} 배분 완료
             {paymentResult.unallocated > 0 && ` · ${formatKRW(paymentResult.unallocated)} 미배분`}
-            {paymentResult.skipped_split_count > 0 &&
-              ` · 분할 채무 ${paymentResult.skipped_split_count}건 제외`}
           </p>
         </div>
       )}

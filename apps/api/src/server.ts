@@ -56,19 +56,13 @@ import {
   updateLockTimeout,
   verifyAppPin,
 } from './security-helpers.js'
-import {
-  createSplitPlan,
-  getInstallments,
-  getParticipantProgress,
-  isParticipantOfDebt,
-  validateSplit,
-  type SplitInput,
-} from './split-helpers.js'
 import { runDueReminders } from './notify/send.js'
 import {
   allocateContactPayment,
   isValidPaymentStrategy,
   mapContactRow,
+  validateDueSchedule,
+  type DueScheduleType,
   type PaymentStrategy,
 } from './payment-helpers.js'
 
@@ -597,15 +591,10 @@ app.get<{ Params: { id: string } }>('/api/v1/debts/:id', async (req, reply) => {
       created_at: e.created_at,
     }))
 
-  const participants = row.is_split ? await getParticipantProgress(row.id) : []
-  const installments = row.is_split ? await getInstallments(row.id) : []
-
   return {
     ...debt,
     opening: { principal: row.principal, occurred_on: row.occurred_on, reason: row.reason },
     ledger_entries,
-    participants,
-    installments,
   }
 })
 
@@ -736,7 +725,7 @@ app.get('/api/v1/contacts', async (req) => {
     'SELECT * FROM contacts WHERE user_id = $1 ORDER BY display_name',
     [userId],
   )
-  return { items: res.rows }
+  return { items: res.rows.map((r) => mapContactRow(r as Record<string, unknown>)) }
 })
 
 app.get<{ Params: { id: string } }>('/api/v1/contacts/:id', async (req, reply) => {
@@ -814,12 +803,12 @@ app.post<{ Body: { display_name: string; note?: string } }>('/api/v1/contacts', 
   }
   const id = await createContact(userId, name, req.body?.note)
   const row = await queryOne('SELECT * FROM contacts WHERE id = $1', [id])
-  return reply.status(201).send(row)
+  return reply.status(201).send(mapContactRow(row!))
 })
 
 app.patch<{
   Params: { id: string }
-  Body: { display_name?: string; note?: string | null; payment_strategy?: PaymentStrategy }
+  Body: { display_name?: string; note?: string | null; payment_strategy?: PaymentStrategy; due_schedule_type?: DueScheduleType; due_schedule_value?: number | null }
 }>('/api/v1/contacts/:id', async (req, reply) => {
   const { userId } = req as AuthedRequest
   const contact = await queryOne('SELECT * FROM contacts WHERE id = $1 AND user_id = $2', [
@@ -838,6 +827,24 @@ app.patch<{
   if (body.payment_strategy !== undefined && !isValidPaymentStrategy(body.payment_strategy)) {
     fields.payment_strategy = '배분 방식이 올바르지 않습니다.'
   }
+
+  const contactRow = contact as Record<string, unknown>
+  let nextScheduleType = (contactRow.due_schedule_type as DueScheduleType) ?? 'none'
+  let nextScheduleValue =
+    contactRow.due_schedule_value == null ? null : Number(contactRow.due_schedule_value)
+
+  if (body.due_schedule_type !== undefined) {
+    nextScheduleType = body.due_schedule_type
+    if (body.due_schedule_type === 'none') nextScheduleValue = null
+  }
+  if (body.due_schedule_value !== undefined && nextScheduleType !== 'none') {
+    nextScheduleValue = body.due_schedule_value
+  }
+
+  if (body.due_schedule_type !== undefined || body.due_schedule_value !== undefined) {
+    const scheduleErr = validateDueSchedule(nextScheduleType, nextScheduleValue)
+    if (scheduleErr) fields.due_schedule = scheduleErr
+  }
   if (Object.keys(fields).length > 0) return reply.status(400).send(validationError(fields))
 
   await query(
@@ -845,12 +852,16 @@ app.patch<{
       display_name = COALESCE($1, display_name),
       note = CASE WHEN $2::text IS NULL THEN note ELSE $2 END,
       payment_strategy = COALESCE($3, payment_strategy),
+      due_schedule_type = $4,
+      due_schedule_value = $5,
       updated_at = NOW()
-     WHERE id = $4`,
+     WHERE id = $6`,
     [
       body.display_name?.trim() ?? null,
       body.note === undefined ? null : body.note,
       body.payment_strategy ?? null,
+      nextScheduleType,
+      nextScheduleValue,
       req.params.id,
     ],
   )
@@ -892,13 +903,15 @@ app.post<{
     occurred_on: string
     reason: string
     due_on?: string | null
-    split?: SplitInput
   }
 }>('/api/v1/debts', async (req, reply) => {
   const { userId } = req as AuthedRequest
   const body = req.body ?? {}
   const fields: Record<string, string> = {}
-  const isSplit = !!body.split
+
+  if ((body as { split?: unknown }).split) {
+    fields.split = '분할 상환 기능은 더 이상 지원하지 않습니다.'
+  }
 
   let contactId = body.contact_id
   if (!contactId && body.contact_name?.trim()) {
@@ -919,18 +932,12 @@ app.post<{
   const reasonErr = validateReason(body.reason)
   if (reasonErr) fields.reason = reasonErr
 
-  // 분할이면 due_on은 회차 일정으로 대체하므로 무시한다.
-  if (!isSplit && body.due_on) {
+  if (body.due_on) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(body.due_on)) {
       fields.due_on = '예정일 형식이 올바르지 않습니다.'
     } else if (body.occurred_on && body.due_on < body.occurred_on) {
       fields.due_on = '예정일은 발생일 이후여야 합니다.'
     }
-  }
-
-  if (isSplit && !principalErr) {
-    const sv = validateSplit(body.split, body.principal)
-    if (!sv.ok) fields.split = sv.error!
   }
 
   if (contactId) {
@@ -943,7 +950,7 @@ app.post<{
   const id = randomUUID()
   await query(
     `INSERT INTO debts (id, user_id, contact_id, direction, principal, occurred_on, reason, due_on, status, is_split)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active',$9)`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active',FALSE)`,
     [
       id,
       userId,
@@ -952,14 +959,9 @@ app.post<{
       body.principal,
       body.occurred_on,
       body.reason.trim(),
-      isSplit ? null : (body.due_on ?? null),
-      isSplit,
+      body.due_on ?? null,
     ],
   )
-
-  if (isSplit && body.split) {
-    await createSplitPlan(id, body.principal, body.split)
-  }
 
   const row = await getDebtRow(id, userId)!
   return reply.status(201).send(await mapDebtAsync(row))
@@ -967,7 +969,7 @@ app.post<{
 
 app.post<{
   Params: { id: string }
-  Body: { type: string; amount: number; occurred_on: string; note?: string | null; participant_id?: string }
+  Body: { type: string; amount: number; occurred_on: string; note?: string | null }
 }>('/api/v1/debts/:id/ledger', async (req, reply) => {
   const { userId } = req as AuthedRequest
   const row = await getDebtRow(req.params.id, userId)
@@ -978,18 +980,6 @@ app.post<{
 
   const body = req.body ?? {}
   const fields: Record<string, string> = {}
-
-  // 분할 채무의 상환은 참여자 귀속이 필수다.
-  let participantId: string | null = null
-  if (body.type === 'payment' && row.is_split) {
-    if (!body.participant_id) {
-      fields.participant_id = '상환할 참여자를 선택해 주세요.'
-    } else if (!(await isParticipantOfDebt(row.id, body.participant_id))) {
-      fields.participant_id = '참여자를 찾을 수 없습니다.'
-    } else {
-      participantId = body.participant_id
-    }
-  }
 
   if (body.type === 'payment') {
     const amountErr = validatePaymentAmount(body.amount)
@@ -1017,7 +1007,7 @@ app.post<{
 
   const entryId = randomUUID()
   await query(
-    `INSERT INTO ledger_entries (id, debt_id, type, amount, occurred_on, note, participant_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    `INSERT INTO ledger_entries (id, debt_id, type, amount, occurred_on, note, participant_id) VALUES ($1,$2,$3,$4,$5,$6,NULL)`,
     [
       entryId,
       row.id,
@@ -1025,7 +1015,6 @@ app.post<{
       body.amount,
       body.occurred_on,
       body.type === 'adjustment' ? body.note?.trim() : body.note?.trim() || null,
-      participantId,
     ],
   )
 

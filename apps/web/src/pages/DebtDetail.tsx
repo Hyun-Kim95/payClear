@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError, formatKRW, type DebtDetail } from '../api/client'
 
-type ModalKind = 'agreement' | 'archive' | 'delete-ledger' | null
+type ModalKind = 'delete-ledger' | null
 
 export function DebtDetailPage() {
   const { id } = useParams()
@@ -27,14 +27,13 @@ export function DebtDetailPage() {
 
   useEffect(reload, [id, location.key])
 
-  const runStatus = async (action: 'complete_agreement' | 'archive' | 'unarchive') => {
+  const runUnarchive = async () => {
     if (!id || !debt) return
     setActionLoading(true)
     setError(null)
     try {
-      const updated = await api.patchDebtStatus(id, action, debt.updated_at)
+      const updated = await api.patchDebtStatus(id, 'unarchive', debt.updated_at)
       setDebt((prev) => (prev ? { ...prev, ...updated } : prev))
-      setModal(null)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '처리에 실패했습니다.')
     } finally {
@@ -87,7 +86,7 @@ export function DebtDetailPage() {
             className="btn btn--secondary"
             style={{ marginTop: '0.5rem' }}
             disabled={actionLoading}
-            onClick={() => void runStatus('unarchive')}
+            onClick={() => void runUnarchive()}
           >
             보관 해제
           </button>
@@ -116,49 +115,6 @@ export function DebtDetailPage() {
           {debt.reason}
         </p>
       </div>
-
-      {debt.is_split && debt.participants && debt.participants.length > 0 && (
-        <>
-          <div className="section-head">
-            <h2>참여자별 진행</h2>
-          </div>
-          {debt.participants.map((p) => {
-            const pct =
-              p.share_amount > 0
-                ? Math.min(100, Math.round((p.paid_amount / p.share_amount) * 100))
-                : 0
-            const insts = (debt.installments ?? []).filter((i) => i.participant_id === p.id)
-            return (
-              <div key={p.id} className="participant-card">
-                <div className="participant-card__head">
-                  <span className="participant-card__name">{p.label}</span>
-                  <span className={p.completed ? 'badge-done' : 'badge-pending'}>
-                    {p.completed ? '완료' : `잔액 ${formatKRW(p.balance)}`}
-                  </span>
-                </div>
-                <div className="progress-track">
-                  <div className="progress-fill" style={{ width: `${pct}%` }} />
-                </div>
-                <div className="muted" style={{ fontSize: '0.8125rem' }}>
-                  분담 {formatKRW(p.share_amount)} · 납입 {formatKRW(p.paid_amount)}
-                </div>
-                {insts.length > 0 && (
-                  <ul className="preview-list" style={{ marginTop: '0.5rem' }}>
-                    {insts.map((i) => (
-                      <li key={i.id} className="installment-row">
-                        <span>
-                          {i.seq}회차 · {i.due_on}
-                        </span>
-                        <span>{formatKRW(i.amount)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )
-          })}
-        </>
-      )}
 
       <div className="section-head">
         <h2>타임라인</h2>
@@ -240,61 +196,7 @@ export function DebtDetailPage() {
         >
           편집
         </button>
-        {!isArchived && debt.status === 'active' && !debt.agreement_closed && (
-          <button type="button" className="btn btn--ghost" onClick={() => setModal('agreement')}>
-            합의 종료
-          </button>
-        )}
-        {!isArchived && debt.status !== 'archived' && (
-          <button type="button" className="btn btn--ghost" onClick={() => setModal('archive')}>
-            보관
-          </button>
-        )}
       </div>
-
-      {modal === 'agreement' && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setModal(null)}>
-          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
-            <h2>합의 종료</h2>
-            <p>잔액이 남아 있어도 합의 종료로 표시합니다. 계속할까요?</p>
-            <div className="action-row">
-              <button type="button" className="btn btn--ghost" onClick={() => setModal(null)}>
-                취소
-              </button>
-              <button
-                type="button"
-                className="btn btn--primary"
-                disabled={actionLoading}
-                onClick={() => void runStatus('complete_agreement')}
-              >
-                확인
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {modal === 'archive' && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setModal(null)}>
-          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
-            <h2>보관</h2>
-            <p>이 채무를 보관할까요? 보관 후 상환·조정·편집이 제한됩니다.</p>
-            <div className="action-row">
-              <button type="button" className="btn btn--ghost" onClick={() => setModal(null)}>
-                취소
-              </button>
-              <button
-                type="button"
-                className="btn btn--primary"
-                disabled={actionLoading}
-                onClick={() => void runStatus('archive')}
-              >
-                보관
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {modal === 'delete-ledger' && (
         <div className="modal-backdrop" role="presentation" onClick={() => setModal(null)}>
