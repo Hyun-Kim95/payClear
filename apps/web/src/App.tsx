@@ -16,7 +16,7 @@ import { DebtPaymentPage } from './pages/DebtPayment'
 import { DebtAdjustmentPage } from './pages/DebtAdjustment'
 import { DebtEditPage } from './pages/DebtEdit'
 import { DebtSharePage } from './pages/DebtShare'
-import { ContactNewPage } from './pages/ContactNew'
+import { ContactPaymentPage } from './pages/ContactPayment'
 import { ContactDetailPage } from './pages/ContactDetail'
 import { ShareViewPage } from './pages/ShareView'
 import { AuthCallbackPage } from './pages/AuthCallback'
@@ -145,7 +145,8 @@ export default function App() {
           <Route path="/debts/:id/edit" element={<DebtEditPage />} />
           <Route path="/debts/:id/share" element={<DebtSharePage />} />
           <Route path="/contacts" element={<ContactsPage />} />
-          <Route path="/contacts/new" element={<ContactNewPage />} />
+          <Route path="/contacts/new" element={<Navigate to="/debts/new" replace />} />
+          <Route path="/contacts/:id/payment" element={<ContactPaymentPage />} />
           <Route path="/contacts/:id" element={<ContactDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/security" element={<SettingsSecurityPage />} />

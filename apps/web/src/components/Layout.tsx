@@ -32,9 +32,6 @@ export function Layout({ onToggleTheme, theme }: { onToggleTheme: () => void; th
           <button type="button" className="btn btn--ghost" style={{ padding: '0.4rem 0.6rem' }} onClick={onToggleTheme}>
             {theme === 'light' ? '🌙' : '☀️'}
           </button>
-          <div className="avatar" aria-hidden>
-            P
-          </div>
         </div>
       </header>
       <main className="main">

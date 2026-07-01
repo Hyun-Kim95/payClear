@@ -15,11 +15,12 @@
 1. 받은 파일을 다음 경로에 둔다:
    - `apps/web/android/app/google-services.json`
    - 이 파일이 있으면 `apps/web/android/app/build.gradle`이 google-services 플러그인을 자동 적용한다.
-2. `apps/web/.env.production`에 다음을 추가:
-   - `VITE_FCM_ENABLED=true`
-3. 재빌드:
-   - `cd apps/web && npm run build && npx cap sync android`
-   - `cd android && (JAVA_HOME=JDK21) ./gradlew assembleDebug`
+2. **재빌드** (`google-services.json`이 있으면 `VITE_FCM_ENABLED=true`가 자동 주입됨):
+   - `cd apps/web && npm run cap:sync`
+   - `cd android && ./gradlew assembleDebug`
+3. 수동으로 env를 쓸 때만 `apps/web/.env.production`에 `VITE_FCM_ENABLED=true` 추가.
+
+> `VITE_FCM_ENABLED`는 **빌드 타임** 변수다. json 배치·env 변경 후 **반드시** `cap:sync`+APK 재빌드해야 "준비 중"이 사라진다.
 
 > 보안: `google-services.json`은 커밋하지 않는다(`.gitignore` 확인). API 키가 포함된다.
 

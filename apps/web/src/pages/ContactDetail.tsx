@@ -1,10 +1,19 @@
-import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError, formatKRW, type ContactDetail } from '../api/client'
+
+type PaymentResult = {
+  allocated_total: number
+  unallocated: number
+  skipped_split_count: number
+  payments: Array<{ debt_id: string; amount: number; reason: string }>
+}
 
 export function ContactDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
+  const paymentResult = (location.state as { paymentResult?: PaymentResult } | null)?.paymentResult
   const [contact, setContact] = useState<ContactDetail | null>(null)
   const [name, setName] = useState('')
   const [note, setNote] = useState('')
@@ -26,6 +35,16 @@ export function ContactDetailPage() {
   }
 
   useEffect(load, [id])
+
+  const allocatableBalance = useMemo(() => {
+    if (!contact) return 0
+    return contact.debts
+      .filter((d) => d.status === 'active' && !d.is_split)
+      .reduce((sum, d) => sum + Math.max(0, d.balance), 0)
+  }, [contact])
+
+  const strategyLabel =
+    contact?.payment_strategy === 'largest_first' ? '잔액 큰 순' : '오래된 채무부터'
 
   const save = async () => {
     if (!id) return
@@ -81,7 +100,15 @@ export function ContactDetailPage() {
       ) : (
         <div style={{ marginBottom: '1.5rem' }}>
           {contact.note && <p className="muted">{contact.note}</p>}
+          <p className="muted" style={{ marginTop: '0.5rem' }}>
+            기본 배분: {strategyLabel}
+          </p>
           <div className="action-row" style={{ marginTop: '0.75rem' }}>
+            {allocatableBalance > 0 && (
+              <Link to={`/contacts/${id}/payment`} className="btn btn--primary">
+                일괄 상환
+              </Link>
+            )}
             <button type="button" className="btn btn--secondary" onClick={() => setEditing(true)}>
               수정
             </button>
@@ -89,6 +116,17 @@ export function ContactDetailPage() {
               삭제
             </button>
           </div>
+        </div>
+      )}
+
+      {paymentResult && (
+        <div className="state-box state-box--success" style={{ marginBottom: '1rem' }}>
+          <p style={{ margin: 0 }}>
+            {formatKRW(paymentResult.allocated_total)} 배분 완료
+            {paymentResult.unallocated > 0 && ` · ${formatKRW(paymentResult.unallocated)} 미배분`}
+            {paymentResult.skipped_split_count > 0 &&
+              ` · 분할 채무 ${paymentResult.skipped_split_count}건 제외`}
+          </p>
         </div>
       )}
 

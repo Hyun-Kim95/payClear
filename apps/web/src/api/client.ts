@@ -158,6 +158,7 @@ export interface Contact {
   id: string
   display_name: string
   note?: string | null
+  payment_strategy?: 'oldest_first' | 'largest_first'
 }
 
 export interface ContactDetail extends Contact {
@@ -290,8 +291,32 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ display_name, note }),
     }),
-  updateContact: (id: string, data: { display_name?: string; note?: string | null }) =>
-    request<Contact>(`/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  updateContact: (
+    id: string,
+    data: {
+      display_name?: string
+      note?: string | null
+      payment_strategy?: 'oldest_first' | 'largest_first'
+    },
+  ) => request<Contact>(`/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  allocateContactPayment: (
+    contactId: string,
+    input: {
+      amount: number
+      occurred_on: string
+      note?: string | null
+      strategy?: 'oldest_first' | 'largest_first'
+    },
+  ) =>
+    request<{
+      allocated_total: number
+      unallocated: number
+      payments: Array<{ debt_id: string; amount: number; entry_id: string; reason: string }>
+      skipped_split_count: number
+    }>(`/contacts/${contactId}/allocate-payment`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
   deleteContact: (id: string) => request<void>(`/contacts/${id}`, { method: 'DELETE' }),
   createDebt: (input: CreateDebtInput) =>
     request<Debt>('/debts', { method: 'POST', body: JSON.stringify(input) }),

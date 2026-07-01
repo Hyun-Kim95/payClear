@@ -69,9 +69,7 @@ export function HomePage() {
         )}
       </section>
 
-      <Link to="/debts/new" className="fab" aria-label="채무 등록">
-        +
-      </Link>
+      <Link to="/debts/new" className="fab" aria-label="채무 등록" />
     </div>
   )
 }

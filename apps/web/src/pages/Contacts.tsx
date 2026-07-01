@@ -14,14 +14,10 @@ export function ContactsPage() {
 
   return (
     <div>
-      <div className="section-head">
-        <h1 className="page-title" style={{ margin: 0 }}>
-          상대
-        </h1>
-        <Link to="/contacts/new" className="btn btn--primary">
-          등록
-        </Link>
-      </div>
+      <h1 className="page-title">상대</h1>
+      <p className="muted" style={{ marginBottom: '1rem' }}>
+        채무 등록 시 이름이 자동으로 추가됩니다. 별도 등록은 필요 없습니다.
+      </p>
       {items.length === 0 ? (
         <p className="muted">등록된 상대가 없습니다.</p>
       ) : (

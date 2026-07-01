@@ -7,6 +7,7 @@ import { runMigrations } from './db/migrate.js'
 import { seedDemo } from './db/seed.js'
 import {
   createContact,
+  findOrCreateContact,
   formatPgDate,
   getDebtRow,
   getLedger,
@@ -64,6 +65,11 @@ import {
   type SplitInput,
 } from './split-helpers.js'
 import { runDueReminders } from './notify/send.js'
+import {
+  allocateContactPayment,
+  mapContactRow,
+  type PaymentStrategy,
+} from './payment-helpers.js'
 
 await runMigrations()
 // 데모 시드는 SEED_DEMO=true일 때만 실행(운영 기본 off, 데모 데이터 유입 차단).
@@ -286,16 +292,17 @@ app.patch<{
   }>
 }>('/api/v1/me/notification-settings', async (req, reply) => {
   const { userId } = req as AuthedRequest
-  if (!(await isEmailVerified(userId))) {
+  const body = req.body ?? {}
+  // 이메일 알림을 켤 때만 인증을 요구한다. FCM(push_enabled)은 토큰 등록과 별도로 허용.
+  if (body.email_enabled === true && !(await isEmailVerified(userId))) {
     return reply.status(403).send({
       error: {
         code: 'EMAIL_REQUIRED',
-        message: '알림 설정을 위해 이메일 인증이 필요합니다.',
+        message: '이메일 알림을 켜려면 이메일 인증이 필요합니다.',
       },
     })
   }
   await ensureNotificationSettings(userId)
-  const body = req.body ?? {}
   const fields: string[] = []
   const params: unknown[] = []
   let n = 1
@@ -749,7 +756,53 @@ app.get<{ Params: { id: string } }>('/api/v1/contacts/:id', async (req, reply) =
   )
   const debts = await Promise.all(debtsRes.rows.map((r) => mapDebtAsync(r as unknown as DebtRow)))
 
-  return { ...contact, debts }
+  return { ...mapContactRow(contact as Record<string, unknown>), debts }
+})
+
+app.post<{
+  Params: { id: string }
+  Body: {
+    amount: number
+    occurred_on: string
+    note?: string | null
+    strategy?: PaymentStrategy
+  }
+}>('/api/v1/contacts/:id/allocate-payment', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const contact = await queryOne('SELECT * FROM contacts WHERE id = $1 AND user_id = $2', [
+    req.params.id,
+    userId,
+  ])
+  if (!contact) {
+    return reply.status(404).send({ error: { code: 'NOT_FOUND', message: '상대를 찾을 수 없습니다.' } })
+  }
+
+  const body = req.body ?? {}
+  const fields: Record<string, string> = {}
+  const amountErr = validatePaymentAmount(body.amount)
+  if (amountErr) fields.amount = amountErr
+  const dateErr = validateDateOnOrBeforeToday(body.occurred_on, '일자')
+  if (dateErr) fields.occurred_on = dateErr
+  const strategy = body.strategy ?? (contact.payment_strategy as PaymentStrategy) ?? 'oldest_first'
+  if (strategy !== 'oldest_first' && strategy !== 'largest_first') {
+    fields.strategy = '배분 방식이 올바르지 않습니다.'
+  }
+  if (Object.keys(fields).length > 0) return reply.status(400).send(validationError(fields))
+
+  try {
+    const result = await allocateContactPayment(
+      req.params.id,
+      userId,
+      body.amount,
+      body.occurred_on,
+      strategy,
+      body.note,
+    )
+    return reply.status(201).send(result)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : '상환 배분에 실패했습니다.'
+    return reply.status(400).send(validationError({ amount: msg }))
+  }
 })
 
 app.post<{ Body: { display_name: string; note?: string } }>('/api/v1/contacts', async (req, reply) => {
@@ -765,7 +818,7 @@ app.post<{ Body: { display_name: string; note?: string } }>('/api/v1/contacts', 
 
 app.patch<{
   Params: { id: string }
-  Body: { display_name?: string; note?: string | null }
+  Body: { display_name?: string; note?: string | null; payment_strategy?: PaymentStrategy }
 }>('/api/v1/contacts/:id', async (req, reply) => {
   const { userId } = req as AuthedRequest
   const contact = await queryOne('SELECT * FROM contacts WHERE id = $1 AND user_id = $2', [
@@ -781,19 +834,32 @@ app.patch<{
   if (body.display_name !== undefined && !body.display_name.trim()) {
     fields.display_name = '이름을 입력해 주세요.'
   }
+  if (
+    body.payment_strategy !== undefined &&
+    body.payment_strategy !== 'oldest_first' &&
+    body.payment_strategy !== 'largest_first'
+  ) {
+    fields.payment_strategy = '배분 방식이 올바르지 않습니다.'
+  }
   if (Object.keys(fields).length > 0) return reply.status(400).send(validationError(fields))
 
   await query(
     `UPDATE contacts SET
       display_name = COALESCE($1, display_name),
       note = CASE WHEN $2::text IS NULL THEN note ELSE $2 END,
+      payment_strategy = COALESCE($3, payment_strategy),
       updated_at = NOW()
-     WHERE id = $3`,
-    [body.display_name?.trim() ?? null, body.note === undefined ? null : body.note, req.params.id],
+     WHERE id = $4`,
+    [
+      body.display_name?.trim() ?? null,
+      body.note === undefined ? null : body.note,
+      body.payment_strategy ?? null,
+      req.params.id,
+    ],
   )
 
   const row = await queryOne('SELECT * FROM contacts WHERE id = $1', [req.params.id])
-  return row
+  return mapContactRow(row!)
 })
 
 app.delete<{ Params: { id: string } }>('/api/v1/contacts/:id', async (req, reply) => {
@@ -839,7 +905,7 @@ app.post<{
 
   let contactId = body.contact_id
   if (!contactId && body.contact_name?.trim()) {
-    contactId = await createContact(userId, body.contact_name)
+    contactId = await findOrCreateContact(userId, body.contact_name)
   }
   if (!contactId) fields.contact_id = '상대를 선택하거나 이름을 입력해 주세요.'
 

@@ -104,6 +104,17 @@ export async function createContact(userId: string, displayName: string, note?: 
   return id
 }
 
+/** 동일 이름 상대가 있으면 재사용, 없으면 생성한다. */
+export async function findOrCreateContact(userId: string, displayName: string): Promise<string> {
+  const name = displayName.trim()
+  const existing = await queryOne<{ id: string }>(
+    'SELECT id FROM contacts WHERE user_id = $1 AND display_name = $2',
+    [userId, name],
+  )
+  if (existing) return existing.id
+  return createContact(userId, name)
+}
+
 export function isArchived(row: DebtRow): boolean {
   return row.status === 'archived'
 }

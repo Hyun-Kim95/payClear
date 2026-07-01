@@ -32,8 +32,10 @@ export function SettingsNotificationsPage() {
     try {
       const s = await api.patchNotificationSettings(patchData)
       setSettings(s)
+      return true
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '저장 실패')
+      return false
     }
   }
 
@@ -44,9 +46,14 @@ export function SettingsNotificationsPage() {
     // 네이티브 앱: FCM 경로로 분기(웹은 아래 web-push 흐름 유지).
     if (isNativePlatform()) {
       const result = await registerNativePush()
-      setPushStatus(result.message)
       if (result.ok) {
-        await patch({ push_enabled: true })
+        const saved = await patch({ push_enabled: true })
+        setPushStatus(
+          saved ? result.message : `${result.message} (설정 저장은 나중에 다시 시도해 주세요.)`,
+        )
+        if (!saved) setError(null)
+      } else {
+        setPushStatus(result.message)
       }
       return
     }
@@ -85,7 +92,7 @@ export function SettingsNotificationsPage() {
       </Link>
       <h1 className="page-title">알림</h1>
       <p className="muted" style={{ marginBottom: '1rem' }}>
-        예정일 1일 전·당일 09:00(KST)에 알림을 보냅니다. iOS Safari는 Push 제한이 있어 이메일 폴백을 권장합니다.
+        예정일 1일 전·당일 09:00(KST)에 알림을 보냅니다. Android 앱은 FCM 푸시, 그 외 환경은 이메일 알림을 이용해 주세요.
       </p>
 
       <div className="form-stack">

@@ -35,8 +35,6 @@ function addMonths(isoDate: string, months: number): string {
 export function DebtNewPage() {
   const navigate = useNavigate()
   const [contacts, setContacts] = useState<Array<{ id: string; display_name: string }>>([])
-  const [mode, setMode] = useState<'existing' | 'new'>('existing')
-  const [contactId, setContactId] = useState('')
   const [contactName, setContactName] = useState('')
   const [direction, setDirection] = useState<'lent' | 'borrowed'>('lent')
   const [principal, setPrincipal] = useState('')
@@ -53,10 +51,7 @@ export function DebtNewPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    api.contacts().then((r) => {
-      setContacts(r.items)
-      if (r.items[0]) setContactId(r.items[0].id)
-    })
+    api.contacts().then((r) => setContacts(r.items))
   }, [])
 
   const submit = async (e: React.FormEvent) => {
@@ -69,8 +64,7 @@ export function DebtNewPage() {
       const amount = Number(principal.replace(/,/g, ''))
       const trimmedNames = participantNames.map((n) => n.trim()).filter(Boolean)
       const debt = await api.createDebt({
-        contact_id: mode === 'existing' ? contactId : undefined,
-        contact_name: mode === 'new' ? contactName : undefined,
+        contact_name: contactName.trim(),
         direction,
         principal: amount,
         occurred_on: occurredOn,
@@ -123,47 +117,24 @@ export function DebtNewPage() {
       <h1 className="page-title">채무 등록</h1>
 
       <form className="form-stack" onSubmit={submit}>
-        <fieldset className="field">
-          <legend>상대</legend>
-          <label className="radio-row">
-            <input
-              type="radio"
-              name="contactMode"
-              checked={mode === 'existing'}
-              onChange={() => setMode('existing')}
-            />
-            기존 상대
-          </label>
-          {mode === 'existing' && (
-            <select
-              className="input"
-              value={contactId}
-              onChange={(e) => setContactId(e.target.value)}
-              required
-            >
-              {contacts.length === 0 && <option value="">상대 없음 — 새로 추가하세요</option>}
-              {contacts.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.display_name}
-                </option>
-              ))}
-            </select>
-          )}
-          <label className="radio-row">
-            <input type="radio" name="contactMode" checked={mode === 'new'} onChange={() => setMode('new')} />
-            새 상대
-          </label>
-          {mode === 'new' && (
-            <input
-              className="input"
-              placeholder="이름"
-              value={contactName}
-              onChange={(e) => setContactName(e.target.value)}
-              required
-            />
-          )}
+        <label className="field">
+          <span>상대</span>
+          <input
+            className="input"
+            list="contact-name-suggestions"
+            placeholder="이름 입력 (자동 등록)"
+            value={contactName}
+            onChange={(e) => setContactName(e.target.value)}
+            required
+          />
+          <datalist id="contact-name-suggestions">
+            {contacts.map((c) => (
+              <option key={c.id} value={c.display_name} />
+            ))}
+          </datalist>
+          {fieldErrors.contact_name && <p className="field-error">{fieldErrors.contact_name}</p>}
           {fieldErrors.contact_id && <p className="field-error">{fieldErrors.contact_id}</p>}
-        </fieldset>
+        </label>
 
         <fieldset className="field">
           <legend>방향</legend>
