@@ -67,6 +67,7 @@ import {
 import { runDueReminders } from './notify/send.js'
 import {
   allocateContactPayment,
+  isValidPaymentStrategy,
   mapContactRow,
   type PaymentStrategy,
 } from './payment-helpers.js'
@@ -784,7 +785,7 @@ app.post<{
   const dateErr = validateDateOnOrBeforeToday(body.occurred_on, '일자')
   if (dateErr) fields.occurred_on = dateErr
   const strategy = body.strategy ?? (contact.payment_strategy as PaymentStrategy) ?? 'oldest_first'
-  if (strategy !== 'oldest_first' && strategy !== 'largest_first') {
+  if (!isValidPaymentStrategy(strategy)) {
     fields.strategy = '배분 방식이 올바르지 않습니다.'
   }
   if (Object.keys(fields).length > 0) return reply.status(400).send(validationError(fields))
@@ -834,11 +835,7 @@ app.patch<{
   if (body.display_name !== undefined && !body.display_name.trim()) {
     fields.display_name = '이름을 입력해 주세요.'
   }
-  if (
-    body.payment_strategy !== undefined &&
-    body.payment_strategy !== 'oldest_first' &&
-    body.payment_strategy !== 'largest_first'
-  ) {
+  if (body.payment_strategy !== undefined && !isValidPaymentStrategy(body.payment_strategy)) {
     fields.payment_strategy = '배분 방식이 올바르지 않습니다.'
   }
   if (Object.keys(fields).length > 0) return reply.status(400).send(validationError(fields))

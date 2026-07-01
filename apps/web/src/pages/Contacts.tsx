@@ -1,23 +1,28 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { api } from '../api/client'
+import { Link, Navigate } from 'react-router-dom'
+import { api, isUnauthorizedError } from '../api/client'
 
 export function ContactsPage() {
   const [items, setItems] = useState<Array<{ id: string; display_name: string }>>([])
   const [loading, setLoading] = useState(true)
+  const [authExpired, setAuthExpired] = useState(false)
 
   useEffect(() => {
-    api.contacts().then((r) => setItems(r.items)).finally(() => setLoading(false))
+    api
+      .contacts()
+      .then((r) => setItems(r.items))
+      .catch((e) => {
+        if (isUnauthorizedError(e)) setAuthExpired(true)
+      })
+      .finally(() => setLoading(false))
   }, [])
 
+  if (authExpired) return <Navigate to="/login" replace />
   if (loading) return <div className="skeleton" />
 
   return (
     <div>
       <h1 className="page-title">상대</h1>
-      <p className="muted" style={{ marginBottom: '1rem' }}>
-        채무 등록 시 이름이 자동으로 추가됩니다. 별도 등록은 필요 없습니다.
-      </p>
       {items.length === 0 ? (
         <p className="muted">등록된 상대가 없습니다.</p>
       ) : (

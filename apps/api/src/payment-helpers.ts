@@ -4,7 +4,18 @@ import { computeBalance, type DebtRow } from './domain.js'
 import { getLedger, refreshDebtStatus } from './debt-helpers.js'
 import { validateDateOnOrBeforeToday, validatePaymentAmount } from './validate.js'
 
-export type PaymentStrategy = 'oldest_first' | 'largest_first'
+export type PaymentStrategy = 'oldest_first' | 'largest_first' | 'newest_first' | 'smallest_first'
+
+export const PAYMENT_STRATEGIES: PaymentStrategy[] = [
+  'oldest_first',
+  'newest_first',
+  'largest_first',
+  'smallest_first',
+]
+
+export function isValidPaymentStrategy(value: string): value is PaymentStrategy {
+  return (PAYMENT_STRATEGIES as string[]).includes(value)
+}
 
 export interface AllocatePaymentResult {
   allocated_total: number
@@ -54,16 +65,27 @@ export async function allocateContactPayment(
   }
 
   withBalance.sort((a, b) => {
-    if (strategy === 'largest_first') {
-      return b.balance - a.balance || a.row.occurred_on.localeCompare(b.row.occurred_on)
-    }
     const dueA = a.row.due_on ?? '9999-12-31'
     const dueB = b.row.due_on ?? '9999-12-31'
-    return (
-      a.row.occurred_on.localeCompare(b.row.occurred_on) ||
-      dueA.localeCompare(dueB) ||
-      b.balance - a.balance
-    )
+    switch (strategy) {
+      case 'largest_first':
+        return b.balance - a.balance || a.row.occurred_on.localeCompare(b.row.occurred_on)
+      case 'smallest_first':
+        return a.balance - b.balance || a.row.occurred_on.localeCompare(b.row.occurred_on)
+      case 'newest_first':
+        return (
+          b.row.occurred_on.localeCompare(a.row.occurred_on) ||
+          dueA.localeCompare(dueB) ||
+          b.balance - a.balance
+        )
+      case 'oldest_first':
+      default:
+        return (
+          a.row.occurred_on.localeCompare(b.row.occurred_on) ||
+          dueA.localeCompare(dueB) ||
+          b.balance - a.balance
+        )
+    }
   })
 
   let remaining = amount

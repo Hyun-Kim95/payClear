@@ -399,7 +399,7 @@ button, input { font: inherit; }
 .btn--primary { background: var(--pc-primary); color: #fff; }
 .btn--secondary { background: var(--pc-primary-soft); color: var(--pc-primary); }
 .btn--ghost { background: transparent; border: 1px solid var(--pc-border); color: var(--pc-text); }
-.btn--block { width: 100%; }
+.btn--block { width: 100%; text-align: center; }
 
 .action-row {
   display: grid;

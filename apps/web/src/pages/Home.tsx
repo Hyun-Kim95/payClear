@@ -1,19 +1,25 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { api, ApiError, formatKRW, type Summary } from '../api/client'
+import { Link, Navigate } from 'react-router-dom'
+import { api, formatKRW, isUnauthorizedError, type Summary } from '../api/client'
 
 export function HomePage() {
   const [data, setData] = useState<Summary | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [authExpired, setAuthExpired] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     api
       .summary()
       .then(setData)
-      .catch((e: ApiError) => setError(e.message))
+      .catch((e) => {
+        if (isUnauthorizedError(e)) setAuthExpired(true)
+        else setError(e instanceof Error ? e.message : '요청 실패')
+      })
       .finally(() => setLoading(false))
   }, [])
+
+  if (authExpired) return <Navigate to="/login" replace />
 
   if (loading) {
     return (

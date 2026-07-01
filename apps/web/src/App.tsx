@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { getToken, isNativePlatform, setToken, setUnauthorizedHandler } from './api/client'
 import { Layout } from './components/Layout'
@@ -85,7 +85,8 @@ function useDeepLinkAuth() {
  */
 function useUnauthorizedRedirect() {
   const navigate = useNavigate()
-  useEffect(() => {
+  // useLayoutEffect: 자식 페이지 useEffect API 호출보다 먼저 핸들러 등록
+  useLayoutEffect(() => {
     setUnauthorizedHandler(() => {
       navigate('/login', { replace: true })
     })

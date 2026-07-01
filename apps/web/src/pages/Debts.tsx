@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { api, type Debt } from '../api/client'
+import { Link, Navigate } from 'react-router-dom'
+import { api, isUnauthorizedError, type Debt } from '../api/client'
 import { DebtCard } from '../components/DebtCard'
 
 const FILTERS = ['전체', '빌려줌', '빌림', '진행중', '완료', '연체'] as const
@@ -38,6 +38,7 @@ export function DebtsPage() {
   const [searchFocused, setSearchFocused] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [authExpired, setAuthExpired] = useState(false)
   const searchWrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -46,7 +47,10 @@ export function DebtsPage() {
         setItems(debts.items)
         setContacts(c.items)
       })
-      .catch((e) => setError(e.message))
+      .catch((e) => {
+        if (isUnauthorizedError(e)) setAuthExpired(true)
+        else setError(e instanceof Error ? e.message : '요청 실패')
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -96,6 +100,8 @@ export function DebtsPage() {
     setQ(name)
     setSearchFocused(false)
   }
+
+  if (authExpired) return <Navigate to="/login" replace />
 
   if (loading) {
     return (

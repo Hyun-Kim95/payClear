@@ -30,6 +30,9 @@ export function DebtCard({ debt }: { debt: Debt }) {
           <span className={`badge badge--dir-${debt.direction}`}>
             {debt.direction === 'lent' ? '빌려줌' : '빌림'}
           </span>
+          <div className="muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+            {debt.occurred_on}
+          </div>
         </div>
         <div style={{ textAlign: 'right' }}>
           <div className="debt-card__balance">{balanceText}</div>

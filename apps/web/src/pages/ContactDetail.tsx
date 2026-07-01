@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { api, ApiError, formatKRW, type ContactDetail } from '../api/client'
+import { api, ApiError, formatKRW, PAYMENT_STRATEGY_LABELS, type ContactDetail } from '../api/client'
 
 type PaymentResult = {
   allocated_total: number
@@ -44,7 +44,7 @@ export function ContactDetailPage() {
   }, [contact])
 
   const strategyLabel =
-    contact?.payment_strategy === 'largest_first' ? '잔액 큰 순' : '오래된 채무부터'
+    PAYMENT_STRATEGY_LABELS[contact?.payment_strategy ?? 'oldest_first'] ?? PAYMENT_STRATEGY_LABELS.oldest_first
 
   const save = async () => {
     if (!id) return
@@ -103,12 +103,16 @@ export function ContactDetailPage() {
           <p className="muted" style={{ marginTop: '0.5rem' }}>
             기본 배분: {strategyLabel}
           </p>
+          {allocatableBalance > 0 && (
+            <Link
+              to={`/contacts/${id}/payment`}
+              className="btn btn--primary btn--block"
+              style={{ marginTop: '0.75rem' }}
+            >
+              일괄 상환
+            </Link>
+          )}
           <div className="action-row" style={{ marginTop: '0.75rem' }}>
-            {allocatableBalance > 0 && (
-              <Link to={`/contacts/${id}/payment`} className="btn btn--primary">
-                일괄 상환
-              </Link>
-            )}
             <button type="button" className="btn btn--secondary" onClick={() => setEditing(true)}>
               수정
             </button>

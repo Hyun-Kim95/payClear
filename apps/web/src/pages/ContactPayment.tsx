@@ -1,8 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api, ApiError, formatKRW, todayLocal, type ContactDetail } from '../api/client'
+import {
+  api,
+  ApiError,
+  formatKRW,
+  PAYMENT_STRATEGY_LABELS,
+  todayLocal,
+  type ContactDetail,
+  type PaymentStrategy,
+} from '../api/client'
 
-type Strategy = 'oldest_first' | 'largest_first'
+const STRATEGY_OPTIONS: PaymentStrategy[] = [
+  'oldest_first',
+  'newest_first',
+  'largest_first',
+  'smallest_first',
+]
 
 export function ContactPaymentPage() {
   const { id } = useParams()
@@ -11,7 +24,7 @@ export function ContactPaymentPage() {
   const [amount, setAmount] = useState('')
   const [occurredOn, setOccurredOn] = useState(todayLocal())
   const [note, setNote] = useState('')
-  const [strategy, setStrategy] = useState<Strategy>('oldest_first')
+  const [strategy, setStrategy] = useState<PaymentStrategy>('oldest_first')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -113,24 +126,17 @@ export function ContactPaymentPage() {
 
         <fieldset className="field">
           <legend>배분 방식</legend>
-          <label className="radio-row">
-            <input
-              type="radio"
-              name="strategy"
-              checked={strategy === 'oldest_first'}
-              onChange={() => setStrategy('oldest_first')}
-            />
-            오래된 채무부터
-          </label>
-          <label className="radio-row">
-            <input
-              type="radio"
-              name="strategy"
-              checked={strategy === 'largest_first'}
-              onChange={() => setStrategy('largest_first')}
-            />
-            잔액 큰 순
-          </label>
+          {STRATEGY_OPTIONS.map((value) => (
+            <label key={value} className="radio-row">
+              <input
+                type="radio"
+                name="strategy"
+                checked={strategy === value}
+                onChange={() => setStrategy(value)}
+              />
+              {PAYMENT_STRATEGY_LABELS[value]}
+            </label>
+          ))}
         </fieldset>
 
         <label className="field">

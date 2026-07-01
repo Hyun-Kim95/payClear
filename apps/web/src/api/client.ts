@@ -66,6 +66,10 @@ export class ApiError extends Error {
   }
 }
 
+export function isUnauthorizedError(err: unknown): err is ApiError {
+  return err instanceof ApiError && err.status === 401 && err.code === 'UNAUTHORIZED'
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken()
   const headers: Record<string, string> = {
@@ -154,11 +158,20 @@ export interface DebtDetail extends Debt {
   installments?: Installment[]
 }
 
+export type PaymentStrategy = 'oldest_first' | 'largest_first' | 'newest_first' | 'smallest_first'
+
+export const PAYMENT_STRATEGY_LABELS: Record<PaymentStrategy, string> = {
+  oldest_first: '오래된 채무부터',
+  newest_first: '최근 채무부터',
+  largest_first: '잔액 큰 순',
+  smallest_first: '잔액 작은 순',
+}
+
 export interface Contact {
   id: string
   display_name: string
   note?: string | null
-  payment_strategy?: 'oldest_first' | 'largest_first'
+  payment_strategy?: PaymentStrategy
 }
 
 export interface ContactDetail extends Contact {
@@ -296,7 +309,7 @@ export const api = {
     data: {
       display_name?: string
       note?: string | null
-      payment_strategy?: 'oldest_first' | 'largest_first'
+      payment_strategy?: PaymentStrategy
     },
   ) => request<Contact>(`/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   allocateContactPayment: (
@@ -305,7 +318,7 @@ export const api = {
       amount: number
       occurred_on: string
       note?: string | null
-      strategy?: 'oldest_first' | 'largest_first'
+      strategy?: PaymentStrategy
     },
   ) =>
     request<{
