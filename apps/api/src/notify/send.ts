@@ -128,7 +128,57 @@ export async function runDueReminders(dryRun = false): Promise<ReminderRunResult
   let sentEmail = 0
   let skipped = 0
 
+  // 한 사용자에게 모든 채널(Push/FCM/Email)로 발송한다.
+  const deliver = async (u: (typeof usersRes.rows)[number], title: string, body: string) => {
+    if (u.push_enabled && hasPush) {
+      const subs = await query<{ endpoint: string; p256dh: string; auth: string }>(
+        'SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = $1',
+        [u.user_id],
+      )
+      for (const sub of subs.rows) {
+        try {
+          await webpush.sendNotification(
+            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+            JSON.stringify({ title, body }),
+          )
+          sentPush++
+        } catch (e) {
+          console.warn('Push failed', sub.endpoint, e)
+        }
+      }
+    }
+
+    if (u.push_enabled && hasFcm) {
+      const fcm = await query<{ token: string }>(
+        'SELECT token FROM fcm_tokens WHERE user_id = $1',
+        [u.user_id],
+      )
+      for (const t of fcm.rows) {
+        try {
+          await getMessaging().send({ token: t.token, notification: { title, body } })
+          sentFcm++
+        } catch (e) {
+          const code = (e as { code?: string })?.code
+          if (
+            code === 'messaging/registration-token-not-registered' ||
+            code === 'messaging/invalid-registration-token' ||
+            code === 'messaging/invalid-argument'
+          ) {
+            await query('DELETE FROM fcm_tokens WHERE token = $1', [t.token])
+          }
+          console.warn('FCM failed', t.token, code ?? e)
+        }
+      }
+    }
+
+    if (u.email_enabled && u.email && u.email_verified_at) {
+      await sendEmail(u.email, title, body)
+      sentEmail++
+    }
+  }
+
   for (const u of usersRes.rows) {
+    // 1) 비분할 채무: debts.due_on 기준
     const debtsRes = await query<{
       id: string
       due_on: string
@@ -139,7 +189,7 @@ export async function runDueReminders(dryRun = false): Promise<ReminderRunResult
       SELECT d.id, d.due_on::text AS due_on, c.display_name AS contact_name, d.direction, d.principal
       FROM debts d
       JOIN contacts c ON c.id = d.contact_id
-      WHERE d.user_id = $1 AND d.status = 'active' AND d.due_on IS NOT NULL
+      WHERE d.user_id = $1 AND d.status = 'active' AND d.is_split = FALSE AND d.due_on IS NOT NULL
     `, [u.user_id])
 
     for (const debt of debtsRes.rows) {
@@ -175,59 +225,57 @@ export async function runDueReminders(dryRun = false): Promise<ReminderRunResult
         console.log(`[DRY_RUN] user=${u.user_id} ${title}: ${body}`)
         continue
       }
+      await deliver(u, title, body)
+    }
 
-      if (u.push_enabled && hasPush) {
-        const subs = await query<{ endpoint: string; p256dh: string; auth: string }>(
-          'SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = $1',
-          [u.user_id],
-        )
-        for (const sub of subs.rows) {
-          try {
-            await webpush.sendNotification(
-              {
-                endpoint: sub.endpoint,
-                keys: { p256dh: sub.p256dh, auth: sub.auth },
-              },
-              JSON.stringify({ title, body }),
-            )
-            sentPush++
-          } catch (e) {
-            console.warn('Push failed', sub.endpoint, e)
-          }
-        }
+    // 2) 분할 채무: installments.due_on 기준(미납 회차, 참여자 잔액 > 0)
+    const instRes = await query<{
+      due_on: string
+      amount: number
+      seq: number
+      participant_label: string
+      share_amount: number
+      paid: number
+      contact_name: string
+      direction: string
+    }>(`
+      SELECT i.due_on::text AS due_on, i.amount, i.seq,
+             p.label AS participant_label, p.share_amount,
+             c.display_name AS contact_name, d.direction,
+             COALESCE(SUM(CASE WHEN le.type = 'payment' AND le.deleted_at IS NULL THEN le.amount END), 0) AS paid
+      FROM installments i
+      JOIN debts d ON d.id = i.debt_id
+      JOIN contacts c ON c.id = d.contact_id
+      JOIN debt_participants p ON p.id = i.participant_id
+      LEFT JOIN ledger_entries le ON le.participant_id = p.id
+      WHERE d.user_id = $1 AND d.status = 'active' AND d.is_split = TRUE
+      GROUP BY i.id, i.due_on, i.amount, i.seq, p.label, p.share_amount, c.display_name, d.direction
+    `, [u.user_id])
+
+    for (const inst of instRes.rows) {
+      const dueOn = inst.due_on.slice(0, 10)
+      const isD1 = u.remind_d1 && dueOn === tomorrow
+      const isD0 = u.remind_d0 && dueOn === today
+      if (!isD1 && !isD0) {
+        skipped++
+        continue
+      }
+      const remaining = Number(inst.share_amount) - Number(inst.paid)
+      if (remaining <= 0) {
+        skipped++
+        continue
       }
 
-      if (u.push_enabled && hasFcm) {
-        const fcm = await query<{ token: string }>(
-          'SELECT token FROM fcm_tokens WHERE user_id = $1',
-          [u.user_id],
-        )
-        for (const t of fcm.rows) {
-          try {
-            await getMessaging().send({
-              token: t.token,
-              notification: { title, body },
-            })
-            sentFcm++
-          } catch (e) {
-            // 만료/무효 토큰은 정리한다.
-            const code = (e as { code?: string })?.code
-            if (
-              code === 'messaging/registration-token-not-registered' ||
-              code === 'messaging/invalid-registration-token' ||
-              code === 'messaging/invalid-argument'
-            ) {
-              await query('DELETE FROM fcm_tokens WHERE token = $1', [t.token])
-            }
-            console.warn('FCM failed', t.token, code ?? e)
-          }
-        }
-      }
+      const label = isD0 ? '오늘' : '내일'
+      const dir = inst.direction === 'lent' ? '받을' : '갚을'
+      const title = `payClear — ${label} 할부 상환 예정`
+      const body = `${inst.contact_name} · ${inst.participant_label} ${inst.seq}회차 ${dir} ${Number(inst.amount).toLocaleString('ko-KR')}원 (${dueOn})`
 
-      if (u.email_enabled && u.email && u.email_verified_at) {
-        await sendEmail(u.email, title, body)
-        sentEmail++
+      if (dryRun) {
+        console.log(`[DRY_RUN] user=${u.user_id} ${title}: ${body}`)
+        continue
       }
+      await deliver(u, title, body)
     }
   }
 

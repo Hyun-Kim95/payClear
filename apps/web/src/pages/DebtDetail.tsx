@@ -117,6 +117,49 @@ export function DebtDetailPage() {
         </p>
       </div>
 
+      {debt.is_split && debt.participants && debt.participants.length > 0 && (
+        <>
+          <div className="section-head">
+            <h2>참여자별 진행</h2>
+          </div>
+          {debt.participants.map((p) => {
+            const pct =
+              p.share_amount > 0
+                ? Math.min(100, Math.round((p.paid_amount / p.share_amount) * 100))
+                : 0
+            const insts = (debt.installments ?? []).filter((i) => i.participant_id === p.id)
+            return (
+              <div key={p.id} className="participant-card">
+                <div className="participant-card__head">
+                  <span className="participant-card__name">{p.label}</span>
+                  <span className={p.completed ? 'badge-done' : 'badge-pending'}>
+                    {p.completed ? '완료' : `잔액 ${formatKRW(p.balance)}`}
+                  </span>
+                </div>
+                <div className="progress-track">
+                  <div className="progress-fill" style={{ width: `${pct}%` }} />
+                </div>
+                <div className="muted" style={{ fontSize: '0.8125rem' }}>
+                  분담 {formatKRW(p.share_amount)} · 납입 {formatKRW(p.paid_amount)}
+                </div>
+                {insts.length > 0 && (
+                  <ul className="preview-list" style={{ marginTop: '0.5rem' }}>
+                    {insts.map((i) => (
+                      <li key={i.id} className="installment-row">
+                        <span>
+                          {i.seq}회차 · {i.due_on}
+                        </span>
+                        <span>{formatKRW(i.amount)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )
+          })}
+        </>
+      )}
+
       <div className="section-head">
         <h2>타임라인</h2>
       </div>

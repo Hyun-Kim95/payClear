@@ -11,6 +11,7 @@ export interface DebtRow {
   reason: string
   due_on: string | null
   status: DebtStatus
+  is_split: boolean
   agreement_closed: boolean | number
   completed_at: string | null
   archived_at: string | null

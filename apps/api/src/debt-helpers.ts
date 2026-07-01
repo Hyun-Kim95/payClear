@@ -46,6 +46,7 @@ function mapDebtRow(row: Record<string, unknown>): DebtRow {
     reason: row.reason as string,
     due_on: row.due_on ? formatPgDate(row.due_on) : null,
     status: row.status as DebtRow['status'],
+    is_split: Boolean(row.is_split),
     agreement_closed: Boolean(row.agreement_closed),
     completed_at: formatPgTimestamp(row.completed_at),
     archived_at: formatPgTimestamp(row.archived_at),

@@ -537,3 +537,93 @@ button, input { font: inherit; }
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+/* 분할 / 회차 할부 */
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.preview-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.preview-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px dashed var(--pc-border);
+}
+
+.preview-row:last-child {
+  border-bottom: none;
+}
+
+.participant-card {
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius);
+  padding: 0.875rem 1rem;
+  margin-bottom: 0.75rem;
+  background: var(--pc-surface);
+}
+
+.participant-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.participant-card__name {
+  font-weight: 600;
+}
+
+.progress-track {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--pc-border);
+  overflow: hidden;
+  margin: 0.5rem 0 0.375rem;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--pc-accent, #2563eb);
+  transition: width 0.3s ease;
+}
+
+.badge-done {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+  background: #16a34a;
+  border-radius: 999px;
+  padding: 0.125rem 0.5rem;
+}
+
+.badge-pending {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--pc-muted);
+  background: var(--pc-border);
+  border-radius: 999px;
+  padding: 0.125rem 0.5rem;
+}
+
+.installment-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8125rem;
+  padding: 0.25rem 0;
+  color: var(--pc-muted);
+}

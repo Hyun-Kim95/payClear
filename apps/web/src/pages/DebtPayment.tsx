@@ -9,6 +9,7 @@ export function DebtPaymentPage() {
   const [amount, setAmount] = useState('')
   const [occurredOn, setOccurredOn] = useState(todayLocal())
   const [note, setNote] = useState('')
+  const [participantId, setParticipantId] = useState('')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -26,14 +27,23 @@ export function DebtPaymentPage() {
         }
         setDebt(d)
         setOccurredOn(todayLocal())
+        if (d.is_split && d.participants?.length) {
+          const firstOpen = d.participants.find((p) => !p.completed) ?? d.participants[0]
+          setParticipantId(firstOpen.id)
+        }
       })
       .catch((e: ApiError) => setError(e.message))
       .finally(() => setLoading(false))
   }, [id])
 
   const parsedAmount = Number(amount.replace(/,/g, ''))
+  const selectedParticipant =
+    debt?.is_split && participantId
+      ? debt.participants?.find((p) => p.id === participantId) ?? null
+      : null
+  const effectiveBalance = selectedParticipant ? selectedParticipant.balance : debt?.balance ?? 0
   const isOverpayment =
-    debt && debt.balance > 0 && parsedAmount > 0 && parsedAmount > debt.balance
+    !!debt && effectiveBalance > 0 && parsedAmount > 0 && parsedAmount > effectiveBalance
 
   const doSubmit = async () => {
     if (!id || !debt) return
@@ -45,6 +55,7 @@ export function DebtPaymentPage() {
         amount: parsedAmount,
         occurred_on: occurredOn,
         note: note.trim() || null,
+        participant_id: debt.is_split ? participantId : undefined,
       })
       navigate(`/debts/${id}`)
     } catch (err) {
@@ -74,7 +85,7 @@ export function DebtPaymentPage() {
   if (!debt) return null
 
   const balanceLabel =
-    debt.balance < 0 ? `초과 상환 ${formatKRW(debt.balance)}` : formatKRW(debt.balance)
+    effectiveBalance < 0 ? `초과 상환 ${formatKRW(effectiveBalance)}` : formatKRW(effectiveBalance)
 
   return (
     <div>
@@ -86,11 +97,33 @@ export function DebtPaymentPage() {
       <div className="detail-hero" style={{ marginBottom: '1.25rem' }}>
         <div className="muted">{debt.contact.display_name}</div>
         <div className="detail-balance" style={{ fontSize: '1.5rem', margin: '0.25rem 0' }}>
-          현재 잔액 {balanceLabel}
+          {selectedParticipant ? `${selectedParticipant.label} 잔액 ` : '현재 잔액 '}
+          {balanceLabel}
         </div>
       </div>
 
       <form className="form-stack" onSubmit={handleSubmit}>
+        {debt.is_split && debt.participants && debt.participants.length > 0 && (
+          <label className="field">
+            <span>상환 참여자</span>
+            <select
+              className="input"
+              value={participantId}
+              onChange={(e) => setParticipantId(e.target.value)}
+              required
+            >
+              {debt.participants.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label} — {p.completed ? '완료' : `잔액 ${formatKRW(p.balance)}`}
+                </option>
+              ))}
+            </select>
+            {fieldErrors.participant_id && (
+              <p className="field-error">{fieldErrors.participant_id}</p>
+            )}
+          </label>
+        )}
+
         <label className="field">
           <span>상환 금액 (원)</span>
           <input
@@ -143,9 +176,9 @@ export function DebtPaymentPage() {
           <div className="modal" role="dialog" aria-labelledby="overpay-title" onClick={(e) => e.stopPropagation()}>
             <h2 id="overpay-title">초과 상환 확인</h2>
             <p>
-              상환 금액이 잔액({formatKRW(debt.balance)})보다 큽니다.
+              상환 금액이 잔액({formatKRW(effectiveBalance)})보다 큽니다.
               <br />
-              초과분 {formatKRW(parsedAmount - debt.balance)}을 기록할까요?
+              초과분 {formatKRW(parsedAmount - effectiveBalance)}을 기록할까요?
             </p>
             <div className="action-row">
               <button type="button" className="btn btn--ghost" onClick={() => setShowOverpayModal(false)}>

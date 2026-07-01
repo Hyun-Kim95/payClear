@@ -55,6 +55,14 @@ import {
   updateLockTimeout,
   verifyAppPin,
 } from './security-helpers.js'
+import {
+  createSplitPlan,
+  getInstallments,
+  getParticipantProgress,
+  isParticipantOfDebt,
+  validateSplit,
+  type SplitInput,
+} from './split-helpers.js'
 import { runDueReminders } from './notify/send.js'
 
 await runMigrations()
@@ -94,6 +102,7 @@ function mapDebt(row: DebtRow, ledger: LedgerRow[]) {
     reason: row.reason,
     due_on: row.due_on,
     status,
+    is_split: !!row.is_split,
     agreement_closed: !!row.agreement_closed,
     balance,
     display_label,
@@ -580,10 +589,15 @@ app.get<{ Params: { id: string } }>('/api/v1/debts/:id', async (req, reply) => {
       created_at: e.created_at,
     }))
 
+  const participants = row.is_split ? await getParticipantProgress(row.id) : []
+  const installments = row.is_split ? await getInstallments(row.id) : []
+
   return {
     ...debt,
     opening: { principal: row.principal, occurred_on: row.occurred_on, reason: row.reason },
     ledger_entries,
+    participants,
+    installments,
   }
 })
 
@@ -815,11 +829,13 @@ app.post<{
     occurred_on: string
     reason: string
     due_on?: string | null
+    split?: SplitInput
   }
 }>('/api/v1/debts', async (req, reply) => {
   const { userId } = req as AuthedRequest
   const body = req.body ?? {}
   const fields: Record<string, string> = {}
+  const isSplit = !!body.split
 
   let contactId = body.contact_id
   if (!contactId && body.contact_name?.trim()) {
@@ -840,12 +856,18 @@ app.post<{
   const reasonErr = validateReason(body.reason)
   if (reasonErr) fields.reason = reasonErr
 
-  if (body.due_on) {
+  // 분할이면 due_on은 회차 일정으로 대체하므로 무시한다.
+  if (!isSplit && body.due_on) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(body.due_on)) {
       fields.due_on = '예정일 형식이 올바르지 않습니다.'
     } else if (body.occurred_on && body.due_on < body.occurred_on) {
       fields.due_on = '예정일은 발생일 이후여야 합니다.'
     }
+  }
+
+  if (isSplit && !principalErr) {
+    const sv = validateSplit(body.split, body.principal)
+    if (!sv.ok) fields.split = sv.error!
   }
 
   if (contactId) {
@@ -857,8 +879,8 @@ app.post<{
 
   const id = randomUUID()
   await query(
-    `INSERT INTO debts (id, user_id, contact_id, direction, principal, occurred_on, reason, due_on, status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active')`,
+    `INSERT INTO debts (id, user_id, contact_id, direction, principal, occurred_on, reason, due_on, status, is_split)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active',$9)`,
     [
       id,
       userId,
@@ -867,9 +889,14 @@ app.post<{
       body.principal,
       body.occurred_on,
       body.reason.trim(),
-      body.due_on ?? null,
+      isSplit ? null : (body.due_on ?? null),
+      isSplit,
     ],
   )
+
+  if (isSplit && body.split) {
+    await createSplitPlan(id, body.principal, body.split)
+  }
 
   const row = await getDebtRow(id, userId)!
   return reply.status(201).send(await mapDebtAsync(row))
@@ -877,7 +904,7 @@ app.post<{
 
 app.post<{
   Params: { id: string }
-  Body: { type: string; amount: number; occurred_on: string; note?: string | null }
+  Body: { type: string; amount: number; occurred_on: string; note?: string | null; participant_id?: string }
 }>('/api/v1/debts/:id/ledger', async (req, reply) => {
   const { userId } = req as AuthedRequest
   const row = await getDebtRow(req.params.id, userId)
@@ -888,6 +915,18 @@ app.post<{
 
   const body = req.body ?? {}
   const fields: Record<string, string> = {}
+
+  // 분할 채무의 상환은 참여자 귀속이 필수다.
+  let participantId: string | null = null
+  if (body.type === 'payment' && row.is_split) {
+    if (!body.participant_id) {
+      fields.participant_id = '상환할 참여자를 선택해 주세요.'
+    } else if (!(await isParticipantOfDebt(row.id, body.participant_id))) {
+      fields.participant_id = '참여자를 찾을 수 없습니다.'
+    } else {
+      participantId = body.participant_id
+    }
+  }
 
   if (body.type === 'payment') {
     const amountErr = validatePaymentAmount(body.amount)
@@ -915,7 +954,7 @@ app.post<{
 
   const entryId = randomUUID()
   await query(
-    `INSERT INTO ledger_entries (id, debt_id, type, amount, occurred_on, note) VALUES ($1,$2,$3,$4,$5,$6)`,
+    `INSERT INTO ledger_entries (id, debt_id, type, amount, occurred_on, note, participant_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
     [
       entryId,
       row.id,
@@ -923,6 +962,7 @@ app.post<{
       body.amount,
       body.occurred_on,
       body.type === 'adjustment' ? body.note?.trim() : body.note?.trim() || null,
+      participantId,
     ],
   )
 

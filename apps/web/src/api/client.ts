@@ -105,6 +105,26 @@ export interface Debt {
   reason: string
   occurred_on: string
   updated_at: string
+  is_split?: boolean
+}
+
+export interface DebtParticipant {
+  id: string
+  label: string
+  contact_id: string | null
+  share_amount: number
+  paid_amount: number
+  balance: number
+  completed: boolean
+}
+
+export interface Installment {
+  id: string
+  participant_id: string
+  participant_label: string
+  seq: number
+  due_on: string
+  amount: number
 }
 
 export interface Summary {
@@ -130,6 +150,8 @@ export interface DebtDetail extends Debt {
     occurred_on: string
     note: string | null
   }>
+  participants?: DebtParticipant[]
+  installments?: Installment[]
 }
 
 export interface Contact {
@@ -142,6 +164,11 @@ export interface ContactDetail extends Contact {
   debts: Debt[]
 }
 
+export interface SplitInput {
+  participants: Array<{ label: string; contact_id?: string | null }>
+  installment: { count: number; interval_months: number; start_on: string }
+}
+
 export interface CreateDebtInput {
   contact_id?: string
   contact_name?: string
@@ -150,12 +177,14 @@ export interface CreateDebtInput {
   occurred_on: string
   reason: string
   due_on?: string | null
+  split?: SplitInput
 }
 
 export interface PaymentInput {
   amount: number
   occurred_on: string
   note?: string | null
+  participant_id?: string
 }
 
 export interface AdjustmentInput {
