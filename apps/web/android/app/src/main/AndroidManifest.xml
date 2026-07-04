@@ -40,6 +40,7 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- Android 13+ 푸시 알림 표시 권한 (FCM) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

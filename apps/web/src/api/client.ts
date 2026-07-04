@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
+import { isBrowserOnline } from '../hooks/useOnlineStatus'
 
 const TOKEN_KEY = 'payclear-token'
 
@@ -70,6 +71,19 @@ export function isUnauthorizedError(err: unknown): err is ApiError {
   return err instanceof ApiError && err.status === 401 && err.code === 'UNAUTHORIZED'
 }
 
+export function isVersionConflictError(err: unknown): err is ApiError {
+  return err instanceof ApiError && err.status === 409 && err.code === 'VERSION_CONFLICT'
+}
+
+export function isOfflineError(err: unknown): err is ApiError {
+  return err instanceof ApiError && err.code === 'OFFLINE'
+}
+
+export const VERSION_CONFLICT_MESSAGE =
+  '다른 기기에서 수정되었습니다. 새로고침 후 다시 시도해 주세요.'
+
+export const OFFLINE_MESSAGE = '연결 필요 — 인터넷 연결을 확인해 주세요.'
+
 function parseApiErrorMessage(body: Record<string, unknown>): string {
   const nested = body.error
   if (nested && typeof nested === 'object' && 'message' in nested && typeof nested.message === 'string') {
@@ -80,6 +94,11 @@ function parseApiErrorMessage(body: Record<string, unknown>): string {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? 'GET').toUpperCase()
+  if (method !== 'GET' && !isBrowserOnline()) {
+    throw new ApiError(0, 'OFFLINE', OFFLINE_MESSAGE)
+  }
+
   const token = getToken()
   const headers: Record<string, string> = {
     ...(init?.headers as Record<string, string>),

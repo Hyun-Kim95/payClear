@@ -46,9 +46,8 @@ Gate 2에서 OpenAPI 3 YAML로 승격합니다.
 | 400 | `CONTACT_IN_USE` | 상대 삭제 불가 |
 | 401 | `UNAUTHORIZED` | 미인증·만료 |
 | 401 | `SHARE_PIN_INVALID` | 공유 PIN 불일치 |
-| 403 | `FORBIDDEN` | 타인 리소스 |
 | 403 | `EMAIL_REQUIRED` | 알림 API만(기록은 허용) |
-| 404 | `NOT_FOUND` | 없음 |
+| 404 | `NOT_FOUND` | 없음·**타인 소유 리소스**(존재 여부 비노출) |
 | 404 | `SHARE_INVALID` | 공유 토큰 무효 |
 | 409 | `VERSION_CONFLICT` | `updated_at` 불일치 |
 | 429 | `RATE_LIMITED` | 전역 제한 |

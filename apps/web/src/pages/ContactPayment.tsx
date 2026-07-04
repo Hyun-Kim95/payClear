@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import {
   api,
   ApiError,
@@ -20,6 +21,7 @@ const STRATEGY_OPTIONS: PaymentStrategy[] = [
 export function ContactPaymentPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const online = useOnlineStatus()
   const [contact, setContact] = useState<ContactDetail | null>(null)
   const [amount, setAmount] = useState('')
   const [occurredOn, setOccurredOn] = useState(todayLocal())
@@ -152,7 +154,7 @@ export function ContactPaymentPage() {
 
         {error && <p className="form-error">{error}</p>}
 
-        <button type="submit" className="btn btn--primary btn--block" disabled={submitting}>
+        <button type="submit" className="btn btn--primary btn--block" disabled={submitting || !online}>
           {submitting ? '배분 중…' : '자동 배분 상환'}
         </button>
       </form>

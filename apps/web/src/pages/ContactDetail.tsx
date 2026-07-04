@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import {
   api,
   ApiError,
@@ -20,6 +21,7 @@ export function ContactDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  const online = useOnlineStatus()
   const paymentResult = (location.state as { paymentResult?: PaymentResult } | null)?.paymentResult
   const [contact, setContact] = useState<ContactDetail | null>(null)
   const [name, setName] = useState('')
@@ -59,6 +61,18 @@ export function ContactDetailPage() {
 
   const strategyLabel =
     PAYMENT_STRATEGY_LABELS[contact?.payment_strategy ?? 'oldest_first'] ?? PAYMENT_STRATEGY_LABELS.oldest_first
+
+  const { totalReceivable, totalPayable } = useMemo(() => {
+    if (!contact) return { totalReceivable: 0, totalPayable: 0 }
+    let receivable = 0
+    let payable = 0
+    for (const d of contact.debts) {
+      if (d.status === 'archived' || d.balance <= 0) continue
+      if (d.direction === 'lent') receivable += d.balance
+      else payable += d.balance
+    }
+    return { totalReceivable: receivable, totalPayable: payable }
+  }, [contact])
 
   const save = async () => {
     if (!id) return
@@ -127,6 +141,17 @@ export function ContactDetailPage() {
         ← 목록
       </Link>
       <h1 className="page-title">{contact.display_name}</h1>
+
+      <div className="mini-stats" style={{ marginBottom: '1rem' }}>
+        <div className="stat-card">
+          <span>받을 돈</span>
+          <strong>{formatKRW(totalReceivable)}</strong>
+        </div>
+        <div className="stat-card">
+          <span>갚을 돈</span>
+          <strong>{formatKRW(totalPayable)}</strong>
+        </div>
+      </div>
 
       {editing ? (
         <div className="form-stack">
@@ -207,7 +232,7 @@ export function ContactDetailPage() {
           </fieldset>
           {error && <p className="form-error">{error}</p>}
           <div className="action-row">
-            <button type="button" className="btn btn--primary" onClick={() => void save()}>
+            <button type="button" className="btn btn--primary" disabled={!online} onClick={() => void save()}>
               저장
             </button>
             <button type="button" className="btn btn--ghost" onClick={() => setEditing(false)}>

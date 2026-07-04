@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { api, ApiError, todayLocal } from '../api/client'
 
 export function DebtNewPage() {
   const navigate = useNavigate()
+  const online = useOnlineStatus()
   const [contacts, setContacts] = useState<Array<{ id: string; display_name: string }>>([])
   const [contactName, setContactName] = useState('')
   const [direction, setDirection] = useState<'lent' | 'borrowed'>('lent')
@@ -152,7 +154,7 @@ export function DebtNewPage() {
         {fieldErrors.split && <p className="field-error">{fieldErrors.split}</p>}
         {error && <p className="form-error">{error}</p>}
 
-        <button type="submit" className="btn btn--primary btn--block" disabled={submitting}>
+        <button type="submit" className="btn btn--primary btn--block" disabled={submitting || !online}>
           {submitting ? '등록 중…' : '등록'}
         </button>
       </form>

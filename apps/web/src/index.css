@@ -460,6 +460,14 @@ button, input { font: inherit; }
 .state-box--error { color: var(--pc-danger); }
 .state-box--success { color: var(--pc-primary); background: rgba(26, 86, 219, 0.08); }
 
+.offline-banner {
+  padding: 0.625rem 1rem;
+  background: var(--pc-danger);
+  color: #fff;
+  font-size: 0.875rem;
+  text-align: center;
+}
+
 .auth-wrap {
   min-height: 100vh;
   display: grid;

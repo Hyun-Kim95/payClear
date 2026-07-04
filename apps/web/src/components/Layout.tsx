@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { OfflineBanner } from './OfflineBanner'
 import { api } from '../api/client'
 
 const NAV = [
@@ -120,6 +121,7 @@ export function Layout({ onToggleTheme, theme }: { onToggleTheme: () => void; th
           </button>
         </div>
       </header>
+      <OfflineBanner />
       <main className="main">
         <Outlet />
       </main>

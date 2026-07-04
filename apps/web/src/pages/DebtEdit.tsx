@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api, ApiError, todayLocal, type DebtDetail } from '../api/client'
+import { VersionConflictNotice } from '../components/VersionConflictNotice'
+import { useOnlineStatus } from '../hooks/useOnlineStatus'
+import { api, ApiError, isVersionConflictError, todayLocal, type DebtDetail } from '../api/client'
 
 export function DebtEditPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const online = useOnlineStatus()
   const [debt, setDebt] = useState<DebtDetail | null>(null)
   const [contacts, setContacts] = useState<Array<{ id: string; display_name: string }>>([])
   const [contactId, setContactId] = useState('')
@@ -15,6 +18,7 @@ export function DebtEditPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [versionConflict, setVersionConflict] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -41,6 +45,7 @@ export function DebtEditPage() {
     setSubmitting(true)
     setError(null)
     setFieldErrors({})
+    setVersionConflict(false)
     try {
       await api.patchDebt(id, {
         contact_id: contactId,
@@ -51,7 +56,10 @@ export function DebtEditPage() {
       })
       navigate(`/debts/${id}`)
     } catch (err) {
-      if (err instanceof ApiError) {
+      if (isVersionConflictError(err)) {
+        setVersionConflict(true)
+        setError(null)
+      } else if (err instanceof ApiError) {
         setError(err.message)
         if (err.fields) setFieldErrors(err.fields)
       } else {
@@ -72,6 +80,27 @@ export function DebtEditPage() {
         ← 상세
       </Link>
       <h1 className="page-title">채무 수정</h1>
+
+      {versionConflict && (
+        <VersionConflictNotice
+          onRefresh={() => {
+            if (!id) return
+            setVersionConflict(false)
+            setLoading(true)
+            Promise.all([api.debt(id), api.contacts()])
+              .then(([d, c]) => {
+                setDebt(d)
+                setContactId(d.contact_id ?? '')
+                setOccurredOn(d.occurred_on)
+                setReason(d.reason)
+                setDueOn(d.due_on ?? '')
+                setContacts(c.items)
+              })
+              .catch((e: ApiError) => setError(e.message))
+              .finally(() => setLoading(false))
+          }}
+        />
+      )}
 
       <form className="form-stack" onSubmit={submit}>
         <label className="field">
@@ -128,7 +157,7 @@ export function DebtEditPage() {
           {fieldErrors.due_on && <p className="field-error">{fieldErrors.due_on}</p>}
         </label>
         {error && <p className="form-error">{error}</p>}
-        <button type="submit" className="btn btn--primary btn--block" disabled={submitting}>
+        <button type="submit" className="btn btn--primary btn--block" disabled={submitting || !online}>
           {submitting ? '저장 중…' : '저장'}
         </button>
       </form>

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, ApiError, type SecurityState } from '../api/client'
+import { api, ApiError, isNativePlatform, type SecurityState } from '../api/client'
 import { useLock } from '../lock/LockProvider'
+import { getBiometricEnabled, setBiometricEnabled, verifyBiometricUnlock } from '../native/biometric'
 
 export function SettingsSecurityPage() {
   const { refreshSecurity } = useLock()
@@ -10,6 +11,7 @@ export function SettingsSecurityPage() {
   const [newPin, setNewPin] = useState('')
   const [confirm, setConfirm] = useState('')
   const [timeout, setTimeout] = useState(5)
+  const [biometricEnabled, setBiometricEnabledState] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
 
@@ -18,6 +20,9 @@ export function SettingsSecurityPage() {
       setSecurity(s)
       setTimeout(s.lock_timeout_minutes)
     })
+    if (isNativePlatform()) {
+      void getBiometricEnabled().then(setBiometricEnabledState)
+    }
   }, [])
 
   const changePin = async (e: React.FormEvent) => {
@@ -48,6 +53,25 @@ export function SettingsSecurityPage() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '저장 실패')
     }
+  }
+
+  const toggleBiometric = async () => {
+    setError(null)
+    setMessage(null)
+    if (!biometricEnabled) {
+      const ok = await verifyBiometricUnlock()
+      if (!ok) {
+        setError('생체 인증을 사용할 수 없습니다. 기기 설정을 확인해 주세요.')
+        return
+      }
+      await setBiometricEnabled(true)
+      setBiometricEnabledState(true)
+      setMessage('생체 잠금이 켜졌습니다.')
+      return
+    }
+    await setBiometricEnabled(false)
+    setBiometricEnabledState(false)
+    setMessage('생체 잠금이 꺼졌습니다.')
   }
 
   return (
@@ -112,6 +136,23 @@ export function SettingsSecurityPage() {
           시간 저장
         </button>
       </div>
+
+      {isNativePlatform() && security?.pin_set && (
+        <div className="form-stack" style={{ marginTop: '2rem' }}>
+          <h2 style={{ fontSize: '1rem' }}>생체 잠금 (Android)</h2>
+          <label className="radio-row">
+            <input
+              type="checkbox"
+              checked={biometricEnabled}
+              onChange={() => void toggleBiometric()}
+            />
+            잠금 해제 시 생체 인증 사용
+          </label>
+          <p className="muted" style={{ margin: 0, fontSize: '0.8125rem' }}>
+            실패 시 PIN 입력으로 전환됩니다.
+          </p>
+        </div>
+      )}
 
       {error && <p className="form-error">{error}</p>}
       {message && <p className="muted">{message}</p>}

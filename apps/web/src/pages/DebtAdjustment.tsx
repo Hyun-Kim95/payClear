@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { api, ApiError, formatKRW, todayLocal, type DebtDetail } from '../api/client'
 
 export function DebtAdjustmentPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const online = useOnlineStatus()
   const [debt, setDebt] = useState<DebtDetail | null>(null)
   const [amount, setAmount] = useState('')
   const [occurredOn, setOccurredOn] = useState(todayLocal())
@@ -123,7 +125,7 @@ export function DebtAdjustmentPage() {
           {fieldErrors.occurred_on && <p className="field-error">{fieldErrors.occurred_on}</p>}
         </label>
         {error && <p className="form-error">{error}</p>}
-        <button type="submit" className="btn btn--primary btn--block" disabled={submitting}>
+        <button type="submit" className="btn btn--primary btn--block" disabled={submitting || !online}>
           {submitting ? '저장 중…' : '조정 기록'}
         </button>
       </form>

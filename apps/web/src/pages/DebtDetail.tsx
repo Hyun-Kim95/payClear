@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { api, ApiError, formatKRW, type DebtDetail } from '../api/client'
+import { VersionConflictNotice } from '../components/VersionConflictNotice'
+import {
+  api,
+  ApiError,
+  formatKRW,
+  isVersionConflictError,
+  type DebtDetail,
+} from '../api/client'
 
-type ModalKind = 'delete-ledger' | null
+type ModalKind = 'delete-ledger' | 'complete-agreement' | 'archive' | null
 
 export function DebtDetailPage() {
   const { id } = useParams()
@@ -10,6 +17,7 @@ export function DebtDetailPage() {
   const navigate = useNavigate()
   const [debt, setDebt] = useState<DebtDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [versionConflict, setVersionConflict] = useState(false)
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<ModalKind>(null)
   const [deleteEntryId, setDeleteEntryId] = useState<string | null>(null)
@@ -18,6 +26,8 @@ export function DebtDetailPage() {
   const reload = () => {
     if (!id) return
     setLoading(true)
+    setVersionConflict(false)
+    setError(null)
     api
       .debt(id)
       .then(setDebt)
@@ -27,15 +37,58 @@ export function DebtDetailPage() {
 
   useEffect(reload, [id, location.key])
 
+  const handleActionError = (err: unknown) => {
+    if (isVersionConflictError(err)) {
+      setVersionConflict(true)
+      setModal(null)
+      setError(null)
+      return
+    }
+    setError(err instanceof ApiError ? err.message : '처리에 실패했습니다.')
+  }
+
   const runUnarchive = async () => {
     if (!id || !debt) return
     setActionLoading(true)
     setError(null)
+    setVersionConflict(false)
     try {
       const updated = await api.patchDebtStatus(id, 'unarchive', debt.updated_at)
       setDebt((prev) => (prev ? { ...prev, ...updated } : prev))
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : '처리에 실패했습니다.')
+      handleActionError(err)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const runCompleteAgreement = async () => {
+    if (!id || !debt) return
+    setActionLoading(true)
+    setError(null)
+    setVersionConflict(false)
+    try {
+      const updated = await api.patchDebtStatus(id, 'complete_agreement', debt.updated_at)
+      setDebt((prev) => (prev ? { ...prev, ...updated } : prev))
+      setModal(null)
+    } catch (err) {
+      handleActionError(err)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const runArchive = async () => {
+    if (!id || !debt) return
+    setActionLoading(true)
+    setError(null)
+    setVersionConflict(false)
+    try {
+      const updated = await api.patchDebtStatus(id, 'archive', debt.updated_at)
+      setDebt((prev) => (prev ? { ...prev, ...updated, ledger_entries: prev.ledger_entries } : prev))
+      setModal(null)
+    } catch (err) {
+      handleActionError(err)
     } finally {
       setActionLoading(false)
     }
@@ -45,6 +98,7 @@ export function DebtDetailPage() {
     if (!id || !deleteEntryId) return
     setActionLoading(true)
     setError(null)
+    setVersionConflict(false)
     try {
       const updated = await api.deleteLedgerEntry(id, deleteEntryId)
       setDebt((prev) =>
@@ -59,7 +113,7 @@ export function DebtDetailPage() {
       setModal(null)
       setDeleteEntryId(null)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : '삭제에 실패했습니다.')
+      handleActionError(err)
     } finally {
       setActionLoading(false)
     }
@@ -70,6 +124,8 @@ export function DebtDetailPage() {
   if (!debt) return null
 
   const isArchived = debt.status === 'archived'
+  const canCompleteAgreement = !isArchived && !debt.agreement_closed
+  const canArchive = !isArchived
   const balanceText = debt.balance < 0 ? `초과 상환 ${formatKRW(debt.balance)}` : formatKRW(debt.balance)
 
   return (
@@ -77,6 +133,8 @@ export function DebtDetailPage() {
       <Link to="/debts" className="back">
         ← 목록
       </Link>
+
+      {versionConflict && <VersionConflictNotice onRefresh={reload} />}
 
       {isArchived && (
         <div className="state-box" style={{ marginBottom: '1rem', background: 'var(--pc-surface-2)' }}>
@@ -198,6 +256,31 @@ export function DebtDetailPage() {
         </button>
       </div>
 
+      {(canCompleteAgreement || canArchive) && (
+        <div className="action-row" style={{ marginTop: '0.75rem' }}>
+          {canCompleteAgreement && (
+            <button
+              type="button"
+              className="btn btn--ghost"
+              disabled={actionLoading}
+              onClick={() => setModal('complete-agreement')}
+            >
+              합의 종료
+            </button>
+          )}
+          {canArchive && (
+            <button
+              type="button"
+              className="btn btn--ghost"
+              disabled={actionLoading}
+              onClick={() => setModal('archive')}
+            >
+              보관
+            </button>
+          )}
+        </div>
+      )}
+
       {modal === 'delete-ledger' && (
         <div className="modal-backdrop" role="presentation" onClick={() => setModal(null)}>
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
@@ -214,6 +297,50 @@ export function DebtDetailPage() {
                 onClick={() => void deleteEntry()}
               >
                 삭제
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modal === 'complete-agreement' && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setModal(null)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+            <h2>합의 종료</h2>
+            <p>잔액이 남아 있어도 「합의 종료」로 표시됩니다. 계속할까요?</p>
+            <div className="action-row">
+              <button type="button" className="btn btn--ghost" onClick={() => setModal(null)}>
+                취소
+              </button>
+              <button
+                type="button"
+                className="btn btn--primary"
+                disabled={actionLoading}
+                onClick={() => void runCompleteAgreement()}
+              >
+                합의 종료
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modal === 'archive' && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setModal(null)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+            <h2>채무 보관</h2>
+            <p>보관하면 공유 링크가 무효화됩니다. 목록에서 숨기고 상환·조정을 막을까요?</p>
+            <div className="action-row">
+              <button type="button" className="btn btn--ghost" onClick={() => setModal(null)}>
+                취소
+              </button>
+              <button
+                type="button"
+                className="btn btn--primary"
+                disabled={actionLoading}
+                onClick={() => void runArchive()}
+              >
+                보관
               </button>
             </div>
           </div>
