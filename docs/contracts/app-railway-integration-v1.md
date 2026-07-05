@@ -89,8 +89,8 @@ DELETE /api/v1/me/fcm-token
 
 ## DoD (Gate 3)
 
-- [ ] 웹: 기존 동작 무변경(상대경로 base, 웹 OAuth redirect)
-- [ ] 앱: Railway API에 연결, OAuth 딥링크 로그인 성공, 토큰 영속 저장
-- [ ] FCM: 토큰 등록/삭제 + 리마인더 발송(자격증명 준비 시) e2e
-- [ ] 운영 하드닝: dev token off, seed off, SSL 정상
-- [ ] 문서: ADR·배포/빌드 가이드 갱신
+- [x] 웹: 기존 동작 무변경(상대경로 base, 웹 OAuth redirect)
+- [x] 앱: Railway API에 연결, OAuth 딥링크 로그인 성공(Google·Kakao 실기기 확인 2026-07-05), 토큰 영속 저장
+- [ ] FCM: 토큰 등록/삭제 + 리마인더 발송 e2e — 토큰 API·앱 UI 준비됨; **리마인더 발송 e2e**는 Railway `FIREBASE_*` 주입 후
+- [x] 운영 하드닝: dev token off, seed off, SSL 정상
+- [x] 문서: ADR·배포/빌드 가이드 갱신 (`apps/web/README.md`, 본 문서 DoD)
