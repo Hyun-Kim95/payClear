@@ -57,6 +57,7 @@ import {
   verifyAppPin,
 } from './security-helpers.js'
 import { runDueReminders } from './notify/send.js'
+import { startNotifyCronSchedule } from './notify/schedule-cron.js'
 import {
   allocateContactPayment,
   buildUpcomingDue,
@@ -146,6 +147,22 @@ app.addHook('onRequest', async (req, reply) => {
 })
 
 app.get('/api/v1/health', async () => ({ ok: true, db: await pingDb() }))
+
+/** 운영 크론 수동 실행·검증용. NOTIFY_CRON_SECRET 헤더 필요. */
+app.post<{ Querystring: { dryRun?: string } }>(
+  '/api/v1/internal/notify/run',
+  async (req, reply) => {
+    const secret = process.env.NOTIFY_CRON_SECRET
+    if (!secret || req.headers['x-notify-cron-secret'] !== secret) {
+      return reply.status(401).send({
+        error: { code: 'UNAUTHORIZED', message: '크론 시크릿이 올바르지 않습니다.' },
+      })
+    }
+    const dryRun = req.query.dryRun === 'true'
+    const result = await runDueReminders(dryRun)
+    return result
+  },
+)
 
 app.get('/api/v1/me', async (req) => {
   const { userId } = req as AuthedRequest
@@ -1160,7 +1177,14 @@ app.delete<{ Params: { id: string; entryId: string } }>(
   },
 )
 
-if (process.env.NOTIFY_CRON_DEV === 'true') {
+const notifyCronEnabled =
+  process.env.NOTIFY_CRON_ENABLED === 'true' ||
+  (process.env.NOTIFY_CRON_ENABLED !== 'false' &&
+    process.env.ALLOW_DEV_TOKEN === 'false')
+
+if (notifyCronEnabled) {
+  startNotifyCronSchedule()
+} else if (process.env.NOTIFY_CRON_DEV === 'true') {
   setInterval(() => {
     void runDueReminders(true).then((r) => console.log('[NOTIFY_CRON_DEV]', r))
   }, 60_000)
