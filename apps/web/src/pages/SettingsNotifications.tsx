@@ -1,31 +1,96 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, ApiError, isNativePlatform, type NotificationSettings } from '../api/client'
-import { registerNativePush } from '../native/push'
+import {
+  api,
+  ApiError,
+  isNativePlatform,
+  type MeProfile,
+  type NotificationSettings,
+} from '../api/client'
+import {
+  getNativePushState,
+  registerNativePush,
+  unregisterNativePush,
+  type NativePushState,
+} from '../native/push'
+import {
+  disableWebPush,
+  enableWebPush,
+  getWebPushState,
+  isWebPushSupported,
+  type WebPushState,
+} from '../native/web-push'
 
-function urlBase64ToUint8Array(base64: string): ArrayBuffer {
-  const padding = '='.repeat((4 - (base64.length % 4)) % 4)
-  const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/')
-  const raw = atob(b64)
-  const buf = new ArrayBuffer(raw.length)
-  const out = new Uint8Array(buf)
-  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i)
-  return buf
+function channelStatusHint(
+  native: boolean,
+  pushEnabled: boolean,
+  nativeState: NativePushState | null,
+  webState: WebPushState | null,
+): string | null {
+  if (native) {
+    if (!nativeState?.fcmBuildEnabled) {
+      return '앱 알림은 준비 중입니다. 이메일 알림을 이용해 주세요.'
+    }
+    if (nativeState.permission === 'denied') {
+      return '기기 설정에서 알림을 허용해 주세요.'
+    }
+    if (pushEnabled && nativeState.hasStoredToken && nativeState.permission === 'granted') {
+      return '이 기기에서 알림을 받습니다.'
+    }
+    if (pushEnabled && !nativeState.hasStoredToken) {
+      return '알림을 켜려면 토글을 다시 켜 주세요.'
+    }
+    return null
+  }
+
+  if (!webState?.supported) {
+    return '이 브라우저는 알림을 지원하지 않습니다. 이메일 알림을 이용해 주세요.'
+  }
+  if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+    return '브라우저 설정에서 알림을 허용해 주세요.'
+  }
+  if (pushEnabled && webState.subscribed) {
+    return '이 브라우저에서 알림을 받습니다.'
+  }
+  if (pushEnabled && !webState.subscribed) {
+    return '알림을 켜려면 토글을 다시 켜 주세요.'
+  }
+  return null
 }
 
 export function SettingsNotificationsPage() {
+  const native = isNativePlatform()
   const [settings, setSettings] = useState<NotificationSettings | null>(null)
+  const [profile, setProfile] = useState<MeProfile | null>(null)
+  const [nativeState, setNativeState] = useState<NativePushState | null>(null)
+  const [webState, setWebState] = useState<WebPushState | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [pushStatus, setPushStatus] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [channelBusy, setChannelBusy] = useState(false)
+
+  const refreshPushState = useCallback(async () => {
+    if (native) {
+      setNativeState(await getNativePushState())
+    } else {
+      setWebState(await getWebPushState())
+    }
+  }, [native])
 
   useEffect(() => {
-    api
-      .getNotificationSettings()
-      .then(setSettings)
-      .catch((e: ApiError) => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [])
+    void (async () => {
+      try {
+        const [s, p] = await Promise.all([api.getNotificationSettings(), api.me()])
+        setSettings(s)
+        setProfile(p)
+        await refreshPushState()
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : '불러오기 실패')
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [refreshPushState])
 
   const patch = async (patchData: Partial<NotificationSettings>) => {
     setError(null)
@@ -39,51 +104,61 @@ export function SettingsNotificationsPage() {
     }
   }
 
-  const enablePush = async () => {
-    setPushStatus(null)
-    setError(null)
+  const channelRegistered = native
+    ? !!(nativeState?.fcmBuildEnabled && nativeState.hasStoredToken && nativeState.permission === 'granted')
+    : !!(webState?.supported && webState.subscribed)
 
-    // 네이티브 앱: FCM 경로로 분기(웹은 아래 web-push 흐름 유지).
-    if (isNativePlatform()) {
-      const result = await registerNativePush()
-      if (result.ok) {
-        const saved = await patch({ push_enabled: true })
-        setPushStatus(
-          saved ? result.message : `${result.message} (설정 저장은 나중에 다시 시도해 주세요.)`,
-        )
-        if (!saved) setError(null)
-      } else {
-        setPushStatus(result.message)
-      }
-      return
-    }
+  const channelToggleChecked = !!(settings?.push_enabled && channelRegistered)
+
+  const channelToggleDisabled =
+    channelBusy ||
+    (native && nativeState !== null && !nativeState.fcmBuildEnabled) ||
+    (!native && !isWebPushSupported())
+
+  const statusHint =
+    settings &&
+    channelStatusHint(native, settings.push_enabled, nativeState, webState)
+
+  const togglePushChannel = async (on: boolean) => {
+    setMessage(null)
+    setError(null)
+    setChannelBusy(true)
 
     try {
-      if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-        setPushStatus('이 브라우저는 Push를 지원하지 않습니다. 이메일 알림을 사용하세요.')
-        return
+      if (on) {
+        const result = native ? await registerNativePush() : await enableWebPush()
+        if (!result.ok) {
+          setMessage(result.message)
+          return
+        }
+        const saved = await patch({ push_enabled: true })
+        await refreshPushState()
+        setMessage(saved ? result.message : `${result.message} (설정 저장은 나중에 다시 시도해 주세요.)`)
+      } else {
+        const result = native ? await unregisterNativePush() : await disableWebPush()
+        await patch({ push_enabled: false })
+        await refreshPushState()
+        setMessage(result.message)
       }
-      const perm = await Notification.requestPermission()
-      if (perm !== 'granted') {
-        setPushStatus('알림 권한이 거부되었습니다.')
-        return
-      }
-      const { public_key } = await api.getPushVapidKey()
-      const reg = await navigator.serviceWorker.ready
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(public_key),
-      })
-      await api.savePushSubscription(sub.toJSON())
-      await patch({ push_enabled: true })
-      setPushStatus('Push 구독이 등록되었습니다.')
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Push 등록 실패')
+    } finally {
+      setChannelBusy(false)
     }
+  }
+
+  const toggleEmail = async (on: boolean) => {
+    setMessage(null)
+    if (on && profile && !profile.email_verified) {
+      setError('이메일 알림을 켜려면 이메일 인증이 필요합니다.')
+      return
+    }
+    await patch({ email_enabled: on })
   }
 
   if (loading) return <div className="skeleton" />
   if (!settings) return <div className="state-box state-box--error">{error}</div>
+
+  const showEmailSection = true
+  const emailDisabled = !profile?.email_verified
 
   return (
     <div>
@@ -92,38 +167,36 @@ export function SettingsNotificationsPage() {
       </Link>
       <h1 className="page-title">알림</h1>
       <p className="muted" style={{ marginBottom: '1rem' }}>
-        예정일 1일 전·당일 09:00(KST)에 알림을 보냅니다. Android 앱은 FCM 푸시, 그 외 환경은 이메일 알림을 이용해 주세요.
+        예정일 <strong>하루 전·당일</strong> 오전 9시(KST)에 알려 드립니다.
       </p>
 
       <div className="form-stack">
-        <button type="button" className="btn btn--secondary" onClick={() => void enablePush()}>
-          Push 알림 등록
-        </button>
-        {pushStatus && <p className="muted">{pushStatus}</p>}
+        <h2 style={{ fontSize: '1rem', marginBottom: '0.25rem' }}>알림 받기</h2>
+        <label className="radio-row">
+          <input
+            type="checkbox"
+            checked={channelToggleChecked}
+            disabled={channelToggleDisabled}
+            onChange={(e) => void togglePushChannel(e.target.checked)}
+          />
+          {native ? '앱 알림' : '브라우저 알림'}
+        </label>
+        {statusHint && (
+          <p className="muted" style={{ margin: 0, fontSize: '0.8125rem' }}>
+            {statusHint}
+          </p>
+        )}
+      </div>
 
-        <label className="radio-row">
-          <input
-            type="checkbox"
-            checked={settings.push_enabled}
-            onChange={(e) => void patch({ push_enabled: e.target.checked })}
-          />
-          Push 알림 사용
-        </label>
-        <label className="radio-row">
-          <input
-            type="checkbox"
-            checked={settings.email_enabled}
-            onChange={(e) => void patch({ email_enabled: e.target.checked })}
-          />
-          이메일 알림 사용
-        </label>
+      <div className="form-stack" style={{ marginTop: '2rem' }}>
+        <h2 style={{ fontSize: '1rem', marginBottom: '0.25rem' }}>알림 시점</h2>
         <label className="radio-row">
           <input
             type="checkbox"
             checked={settings.remind_d1}
             onChange={(e) => void patch({ remind_d1: e.target.checked })}
           />
-          1일 전 알림 (D-1)
+          하루 전 알림
         </label>
         <label className="radio-row">
           <input
@@ -131,10 +204,39 @@ export function SettingsNotificationsPage() {
             checked={settings.remind_d0}
             onChange={(e) => void patch({ remind_d0: e.target.checked })}
           />
-          당일 알림 (D-0)
+          당일 알림
         </label>
       </div>
+
+      {showEmailSection && (
+        <div className="form-stack" style={{ marginTop: '2rem' }}>
+          <h2 style={{ fontSize: '1rem', marginBottom: '0.25rem' }}>이메일</h2>
+          {emailDisabled && (
+            <p className="muted" style={{ margin: '0 0 0.5rem', fontSize: '0.8125rem' }}>
+              이메일 알림을 쓰려면{' '}
+              <Link to="/register-email">이메일 등록·인증</Link>
+              이 필요합니다.
+            </p>
+          )}
+          <label className="radio-row">
+            <input
+              type="checkbox"
+              checked={settings.email_enabled}
+              disabled={emailDisabled}
+              onChange={(e) => void toggleEmail(e.target.checked)}
+            />
+            이메일 알림 사용
+          </label>
+          {!native && (
+            <p className="muted" style={{ margin: 0, fontSize: '0.8125rem' }}>
+              브라우저 알림을 쓸 수 없을 때 이메일로 보내 드립니다.
+            </p>
+          )}
+        </div>
+      )}
+
       {error && <p className="form-error">{error}</p>}
+      {message && <p className="muted">{message}</p>}
     </div>
   )
 }

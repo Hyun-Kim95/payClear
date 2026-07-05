@@ -106,7 +106,7 @@ npm run android:add       # = cap add android
    - 루트 `android/build.gradle`: `com.google.gms:google-services` classpath 포함.
    - `android/app/build.gradle`: `google-services.json`이 존재할 때만 plugin 적용(파일 없으면 skip).
 4. `npm run cap:sync` 후 다시 빌드.
-5. 앱 내 **설정 → 알림 → "Push 알림 등록"**: 네이티브에서는 FCM 권한 요청 → 토큰을 `POST /api/v1/me/fcm-token`(`{token, platform:'android'}`)으로 전송한다. 웹은 기존 web-push를 그대로 사용한다.
+5. 앱 내 **설정 → 알림 → 「앱 알림」 켜기**: 권한 요청 → FCM 토큰을 `POST /api/v1/me/fcm-token`(`{token, platform:'android'}`)으로 전송한다. 웹은 **설정 → 알림 → 「브라우저 알림」** 토글로 web-push를 등록한다.
 
 > 서버 측 FCM 발송 자격증명(`FIREBASE_*`)이 없으면 발송은 skip되며, 토큰 등록/UI는 정상 동작한다(계약 §3·§4).
 
