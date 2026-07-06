@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom'
-import type { Debt } from '../api/client'
-import { formatKRW } from '../api/client'
+import { formatDateYMD, formatKRW, type Debt } from '../api/client'
 
 function StatusBadge({ debt }: { debt: Debt }) {
   if (debt.is_overdue && debt.status === 'active') {
@@ -31,7 +30,7 @@ export function DebtCard({ debt }: { debt: Debt }) {
             {debt.direction === 'lent' ? '빌려줌' : '빌림'}
           </span>
           <div className="muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
-            {debt.occurred_on}
+            {formatDateYMD(debt.occurred_on)}
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
@@ -40,7 +39,7 @@ export function DebtCard({ debt }: { debt: Debt }) {
             <StatusBadge debt={debt} />
             {debt.due_on && debt.status === 'active' && (
               <span className="muted" style={{ fontSize: '0.75rem' }}>
-                {debt.due_on}
+                {formatDateYMD(debt.due_on)}
               </span>
             )}
           </div>

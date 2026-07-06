@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import {
-  api,
-  ApiError,
-  isNativePlatform,
-  type MeProfile,
-  type NotificationSettings,
-} from '../api/client'
+import { api, ApiError, isNativePlatform, type NotificationSettings } from '../api/client'
 import {
   getNativePushState,
   registerNativePush,
@@ -29,7 +23,7 @@ function channelStatusHint(
 ): string | null {
   if (native) {
     if (!nativeState?.fcmBuildEnabled) {
-      return '앱 알림은 준비 중입니다. 이메일 알림을 이용해 주세요.'
+      return '앱 알림은 준비 중입니다.'
     }
     if (nativeState.permission === 'denied') {
       return '기기 설정에서 알림을 허용해 주세요.'
@@ -44,7 +38,7 @@ function channelStatusHint(
   }
 
   if (!webState?.supported) {
-    return '이 브라우저는 알림을 지원하지 않습니다. 이메일 알림을 이용해 주세요.'
+    return '이 브라우저는 알림을 지원하지 않습니다.'
   }
   if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
     return '브라우저 설정에서 알림을 허용해 주세요.'
@@ -61,7 +55,6 @@ function channelStatusHint(
 export function SettingsNotificationsPage() {
   const native = isNativePlatform()
   const [settings, setSettings] = useState<NotificationSettings | null>(null)
-  const [profile, setProfile] = useState<MeProfile | null>(null)
   const [nativeState, setNativeState] = useState<NativePushState | null>(null)
   const [webState, setWebState] = useState<WebPushState | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -80,9 +73,8 @@ export function SettingsNotificationsPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const [s, p] = await Promise.all([api.getNotificationSettings(), api.me()])
+        const s = await api.getNotificationSettings()
         setSettings(s)
-        setProfile(p)
         await refreshPushState()
       } catch (e) {
         setError(e instanceof ApiError ? e.message : '불러오기 실패')
@@ -145,20 +137,8 @@ export function SettingsNotificationsPage() {
     }
   }
 
-  const toggleEmail = async (on: boolean) => {
-    setMessage(null)
-    if (on && profile && !profile.email_verified) {
-      setError('이메일 알림을 켜려면 이메일 인증이 필요합니다.')
-      return
-    }
-    await patch({ email_enabled: on })
-  }
-
   if (loading) return <div className="skeleton" />
   if (!settings) return <div className="state-box state-box--error">{error}</div>
-
-  const showEmailSection = true
-  const emailDisabled = !profile?.email_verified
 
   return (
     <div>
@@ -207,33 +187,6 @@ export function SettingsNotificationsPage() {
           당일 알림
         </label>
       </div>
-
-      {showEmailSection && (
-        <div className="form-stack" style={{ marginTop: '2rem' }}>
-          <h2 style={{ fontSize: '1rem', marginBottom: '0.25rem' }}>이메일</h2>
-          {emailDisabled && (
-            <p className="muted" style={{ margin: '0 0 0.5rem', fontSize: '0.8125rem' }}>
-              이메일 알림을 쓰려면{' '}
-              <Link to="/register-email">이메일 등록·인증</Link>
-              이 필요합니다.
-            </p>
-          )}
-          <label className="radio-row">
-            <input
-              type="checkbox"
-              checked={settings.email_enabled}
-              disabled={emailDisabled}
-              onChange={(e) => void toggleEmail(e.target.checked)}
-            />
-            이메일 알림 사용
-          </label>
-          {!native && (
-            <p className="muted" style={{ margin: 0, fontSize: '0.8125rem' }}>
-              브라우저 알림을 쓸 수 없을 때 이메일로 보내 드립니다.
-            </p>
-          )}
-        </div>
-      )}
 
       {error && <p className="form-error">{error}</p>}
       {message && <p className="muted">{message}</p>}

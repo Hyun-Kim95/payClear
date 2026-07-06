@@ -37,7 +37,7 @@ export async function getWebPushState(): Promise<WebPushState> {
 
 export async function enableWebPush(): Promise<WebPushResult> {
   if (!isWebPushSupported()) {
-    return { ok: false, message: '이 브라우저는 알림을 지원하지 않습니다. 이메일 알림을 이용해 주세요.' }
+    return { ok: false, message: '이 브라우저는 알림을 지원하지 않습니다.' }
   }
 
   try {

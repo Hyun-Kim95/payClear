@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { query, queryOne } from './db/pool.js'
 import { computeBalance, type DebtRow } from './domain.js'
-import { getLedger, refreshDebtStatus } from './debt-helpers.js'
+import { getLedger, refreshDebtStatus, formatPgDate } from './debt-helpers.js'
 import { validateDateOnOrBeforeToday, validatePaymentAmount, todayKST } from './validate.js'
 
 export type PaymentStrategy = 'oldest_first' | 'largest_first' | 'newest_first' | 'smallest_first'
@@ -158,17 +158,18 @@ export function buildUpcomingDue(
 
   for (const debt of debts) {
     if (!debt.due_on || debt.status !== 'active' || debt.balance <= 0) continue
-    if (debt.due_on < start || debt.due_on > end) continue
+    const dueOn = formatPgDate(debt.due_on)
+    if (dueOn < start || dueOn > end) continue
     items.push({
       kind: 'debt',
       debt_id: debt.id,
       contact_id: debt.contact_id,
       contact_name: debt.contact_name,
-      due_on: debt.due_on,
+      due_on: dueOn,
       balance: debt.balance,
       direction: debt.direction,
     })
-    covered.add(`${debt.contact_id}|${debt.due_on}|${debt.direction}`)
+    covered.add(`${debt.contact_id}|${dueOn}|${debt.direction}`)
   }
 
   for (const contact of contacts) {

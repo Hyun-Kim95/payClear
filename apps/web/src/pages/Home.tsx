@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
-import { api, formatKRW, isUnauthorizedError, type Summary, type UpcomingDueItem } from '../api/client'
+import { api, formatDateYMD, formatKRW, isUnauthorizedError, type Summary, type UpcomingDueItem } from '../api/client'
 
 function upcomingDueLink(u: UpcomingDueItem): string {
   if (u.kind === 'contact_schedule') {
@@ -94,7 +94,7 @@ export function HomePage() {
                   </span>
                 </span>
                 <span>
-                  {formatKRW(u.balance)} · {u.due_on}
+                  {formatKRW(u.balance)} · {formatDateYMD(u.due_on)}
                 </span>
               </Link>
             )

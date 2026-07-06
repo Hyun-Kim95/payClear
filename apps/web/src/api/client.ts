@@ -475,6 +475,13 @@ export function formatKRW(amount: number): string {
   return `${Math.abs(amount).toLocaleString('ko-KR')}원`
 }
 
+/** YYYY-MM-DD 또는 ISO 문자열을 화면용 날짜(YYYY-MM-DD)로 */
+export function formatDateYMD(value: string | null | undefined): string {
+  if (!value) return ''
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10)
+  return value
+}
+
 export function todayLocal(): string {
   return new Date().toLocaleDateString('en-CA')
 }

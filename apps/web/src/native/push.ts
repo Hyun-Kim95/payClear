@@ -62,7 +62,7 @@ export async function registerNativePush(): Promise<PushResult> {
   }
 
   if (import.meta.env.VITE_FCM_ENABLED !== 'true') {
-    return { ok: false, message: '앱 알림은 준비 중입니다. 이메일 알림을 이용해 주세요.' }
+    return { ok: false, message: '앱 알림은 준비 중입니다.' }
   }
 
   try {
