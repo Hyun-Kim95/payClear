@@ -10,6 +10,7 @@ import {
   type ContactDetail,
   type PaymentStrategy,
 } from '../api/client'
+import { formatAmountDigits, parseAmountInput, sanitizeAmountDigits } from '../utils/amountInput'
 
 const STRATEGY_OPTIONS: PaymentStrategy[] = [
   'oldest_first',
@@ -58,7 +59,7 @@ export function ContactPaymentPage() {
     setFieldErrors({})
     setSubmitting(true)
     try {
-      const parsed = Number(amount.replace(/,/g, ''))
+      const parsed = parseAmountInput(amount)
       const result = await api.allocateContactPayment(id, {
         amount: parsed,
         occurred_on: occurredOn,
@@ -107,9 +108,19 @@ export function ContactPaymentPage() {
             type="text"
             inputMode="numeric"
             value={amount}
-            onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))}
+            onChange={(e) => setAmount(formatAmountDigits(sanitizeAmountDigits(e.target.value)))}
             required
           />
+          <div className="chip-row" style={{ marginTop: '0.5rem', marginBottom: 0 }}>
+            <button
+              type="button"
+              className="chip"
+              disabled={totalBalance <= 0}
+              onClick={() => setAmount(formatAmountDigits(String(totalBalance)))}
+            >
+              전액
+            </button>
+          </div>
           {fieldErrors.amount && <p className="field-error">{fieldErrors.amount}</p>}
         </label>
 

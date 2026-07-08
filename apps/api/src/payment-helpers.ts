@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { query, queryOne } from './db/pool.js'
 import { computeBalance, type DebtRow } from './domain.js'
-import { getLedger, refreshDebtStatus, formatPgDate } from './debt-helpers.js'
+import { getLedger, mapDebtRow, refreshDebtStatus, formatPgDate } from './debt-helpers.js'
 import { validateDateOnOrBeforeToday, validatePaymentAmount, todayKST } from './validate.js'
 
 export type PaymentStrategy = 'oldest_first' | 'largest_first' | 'newest_first' | 'smallest_first'
@@ -257,11 +257,11 @@ export async function allocateContactPayment(
   const withBalance: DebtWithBalance[] = []
 
   for (const raw of debtsRes.rows) {
-    const row = raw as unknown as DebtRow
+    const row = mapDebtRow(raw)
     const ledger = await getLedger(row.id)
-    const balance = computeBalance(Number(row.principal), ledger)
+    const balance = computeBalance(row.principal, ledger)
     if (balance <= 0) continue
-    withBalance.push({ row: row as DebtRow, balance })
+    withBalance.push({ row, balance })
   }
 
   withBalance.sort((a, b) => {

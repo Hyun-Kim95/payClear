@@ -2,6 +2,18 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { api, ApiError, formatKRW, todayLocal, type DebtDetail } from '../api/client'
+import {
+  amountFromBalanceRatio,
+  formatAmountDigits,
+  parseAmountInput,
+  sanitizeAmountDigits,
+} from '../utils/amountInput'
+
+const AMOUNT_PRESETS = [
+  { label: '전액', ratio: 1 },
+  { label: '50%', ratio: 0.5 },
+  { label: '30%', ratio: 0.3 },
+] as const
 
 export function DebtPaymentPage() {
   const { id } = useParams()
@@ -33,8 +45,9 @@ export function DebtPaymentPage() {
       .finally(() => setLoading(false))
   }, [id])
 
-  const parsedAmount = Number(amount.replace(/,/g, ''))
+  const parsedAmount = parseAmountInput(amount)
   const effectiveBalance = debt?.balance ?? 0
+  const presetsDisabled = effectiveBalance <= 0
   const isOverpayment =
     !!debt && effectiveBalance > 0 && parsedAmount > 0 && parsedAmount > effectiveBalance
 
@@ -61,6 +74,15 @@ export function DebtPaymentPage() {
       setSubmitting(false)
       setShowOverpayModal(false)
     }
+  }
+
+  const fillPreset = (ratio: number) => {
+    const value = amountFromBalanceRatio(effectiveBalance, ratio)
+    setAmount(formatAmountDigits(String(value)))
+  }
+
+  const handleAmountChange = (raw: string) => {
+    setAmount(formatAmountDigits(sanitizeAmountDigits(raw)))
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -100,11 +122,24 @@ export function DebtPaymentPage() {
             className="input"
             type="text"
             inputMode="numeric"
-            placeholder="100000"
+            placeholder="100,000"
             value={amount}
-            onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))}
+            onChange={(e) => handleAmountChange(e.target.value)}
             required
           />
+          <div className="chip-row" style={{ marginTop: '0.5rem', marginBottom: 0 }}>
+            {AMOUNT_PRESETS.map(({ label, ratio }) => (
+              <button
+                key={label}
+                type="button"
+                className="chip"
+                disabled={presetsDisabled}
+                onClick={() => fillPreset(ratio)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           {fieldErrors.amount && <p className="field-error">{fieldErrors.amount}</p>}
         </label>
 

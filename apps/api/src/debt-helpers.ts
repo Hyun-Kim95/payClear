@@ -35,7 +35,7 @@ function mapLedgerRow(row: Record<string, unknown>): LedgerRow {
   }
 }
 
-function mapDebtRow(row: Record<string, unknown>): DebtRow {
+export function mapDebtRow(row: Record<string, unknown>): DebtRow {
   return {
     id: row.id as string,
     user_id: row.user_id as string,
