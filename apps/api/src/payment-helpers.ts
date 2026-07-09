@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import { query, queryOne } from './db/pool.js'
-import { computeBalance, type DebtRow } from './domain.js'
+import { computeBalance, type DebtDirection, type DebtRow } from './domain.js'
 import { getLedger, mapDebtRow, refreshDebtStatus, formatPgDate } from './debt-helpers.js'
 import { validateDateOnOrBeforeToday, validatePaymentAmount, todayKST } from './validate.js'
 
@@ -229,9 +229,23 @@ export interface AllocatePaymentResult {
   payments: Array<{ debt_id: string; amount: number; entry_id: string; reason: string }>
 }
 
+export class AllocatePaymentError extends Error {
+  constructor(
+    message: string,
+    readonly field: 'amount' | 'occurred_on' = 'amount',
+  ) {
+    super(message)
+    this.name = 'AllocatePaymentError'
+  }
+}
+
 interface DebtWithBalance {
   row: DebtRow
   balance: number
+}
+
+export function isValidDebtDirection(value: string): value is DebtDirection {
+  return value === 'lent' || value === 'borrowed'
 }
 
 export async function allocateContactPayment(
@@ -240,18 +254,19 @@ export async function allocateContactPayment(
   amount: number,
   occurredOn: string,
   strategy: PaymentStrategy,
+  direction: DebtDirection,
   note?: string | null,
 ): Promise<AllocatePaymentResult> {
   const amountErr = validatePaymentAmount(amount)
-  if (amountErr) throw new Error(amountErr)
+  if (amountErr) throw new AllocatePaymentError(amountErr)
   const dateErr = validateDateOnOrBeforeToday(occurredOn, '일자')
-  if (dateErr) throw new Error(dateErr)
+  if (dateErr) throw new AllocatePaymentError(dateErr, 'occurred_on')
 
   const debtsRes = await query<Record<string, unknown>>(
     `SELECT d.*, c.display_name AS contact_name FROM debts d
      JOIN contacts c ON c.id = d.contact_id
-     WHERE d.contact_id = $1 AND d.user_id = $2 AND d.status = 'active'`,
-    [contactId, userId],
+     WHERE d.contact_id = $1 AND d.user_id = $2 AND d.status = 'active' AND d.direction = $3 AND d.is_split = false`,
+    [contactId, userId, direction],
   )
 
   const withBalance: DebtWithBalance[] = []
@@ -264,7 +279,15 @@ export async function allocateContactPayment(
     withBalance.push({ row, balance })
   }
 
-  withBalance.sort((a, b) => {
+  const eligible = withBalance.filter(({ row }) => row.occurred_on <= occurredOn)
+  if (eligible.length === 0) {
+    throw new AllocatePaymentError(
+      '선택한 일자에 배분 가능한 채무가 없습니다. 일자를 채무 발생일 이후로 맞춰 주세요.',
+      'occurred_on',
+    )
+  }
+
+  eligible.sort((a, b) => {
     const dueA = a.row.due_on ?? '9999-12-31'
     const dueB = b.row.due_on ?? '9999-12-31'
     switch (strategy) {
@@ -291,7 +314,7 @@ export async function allocateContactPayment(
   let remaining = amount
   const payments: AllocatePaymentResult['payments'] = []
 
-  for (const { row, balance } of withBalance) {
+  for (const { row, balance } of eligible) {
     if (remaining <= 0) break
     const payAmount = Math.min(remaining, balance)
     if (payAmount <= 0) continue

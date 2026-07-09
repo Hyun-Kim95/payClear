@@ -10,6 +10,10 @@ import {
   type ContactDetail,
   type DueScheduleType,
 } from '../api/client'
+import {
+  CONTACT_PAYMENT_COPY,
+  sumContactBalanceByDirection,
+} from '../utils/contactPayment'
 
 type PaymentResult = {
   allocated_total: number
@@ -52,27 +56,22 @@ export function ContactDetailPage() {
 
   useEffect(load, [id])
 
-  const allocatableBalance = useMemo(() => {
+  const payableBalance = useMemo(() => {
     if (!contact) return 0
-    return contact.debts
-      .filter((d) => d.status === 'active')
-      .reduce((sum, d) => sum + Math.max(0, d.balance), 0)
+    return sumContactBalanceByDirection(contact.debts, 'borrowed')
+  }, [contact])
+
+  const receivableBalance = useMemo(() => {
+    if (!contact) return 0
+    return sumContactBalanceByDirection(contact.debts, 'lent')
   }, [contact])
 
   const strategyLabel =
     PAYMENT_STRATEGY_LABELS[contact?.payment_strategy ?? 'oldest_first'] ?? PAYMENT_STRATEGY_LABELS.oldest_first
 
   const { totalReceivable, totalPayable } = useMemo(() => {
-    if (!contact) return { totalReceivable: 0, totalPayable: 0 }
-    let receivable = 0
-    let payable = 0
-    for (const d of contact.debts) {
-      if (d.status === 'archived' || d.balance <= 0) continue
-      if (d.direction === 'lent') receivable += d.balance
-      else payable += d.balance
-    }
-    return { totalReceivable: receivable, totalPayable: payable }
-  }, [contact])
+    return { totalReceivable: receivableBalance, totalPayable: payableBalance }
+  }, [receivableBalance, payableBalance])
 
   const save = async () => {
     if (!id) return
@@ -252,9 +251,20 @@ export function ContactDetailPage() {
             </p>
           )}
           <div className="action-row" style={{ marginTop: '0.75rem' }}>
-            {allocatableBalance > 0 && (
-              <Link to={`/contacts/${id}/payment`} className="btn btn--primary action-row__span">
-                일괄 상환
+            {payableBalance > 0 && (
+              <Link
+                to={`/contacts/${id}/payment?direction=borrowed`}
+                className="btn btn--primary action-row__span"
+              >
+                {CONTACT_PAYMENT_COPY.borrowed.detailButton} ({formatKRW(payableBalance)})
+              </Link>
+            )}
+            {receivableBalance > 0 && (
+              <Link
+                to={`/contacts/${id}/payment?direction=lent`}
+                className={payableBalance > 0 ? 'btn btn--secondary action-row__span' : 'btn btn--primary action-row__span'}
+              >
+                {CONTACT_PAYMENT_COPY.lent.detailButton} ({formatKRW(receivableBalance)})
               </Link>
             )}
             <button type="button" className="btn btn--secondary" onClick={() => setEditing(true)}>
