@@ -492,6 +492,86 @@ button, input { font: inherit; }
   font-size: 1.75rem;
 }
 
+.legal-wrap {
+  min-height: 100vh;
+  padding: 1.5rem 1rem 2.5rem;
+  background: var(--pc-bg);
+}
+
+.legal-card {
+  max-width: 42rem;
+  margin: 0 auto;
+  background: var(--pc-surface);
+  border-radius: var(--pc-radius-xl);
+  padding: 1.75rem 1.5rem;
+  border: 1px solid var(--pc-border);
+  box-shadow: var(--pc-shadow);
+}
+
+.legal-header h1 {
+  margin: 0.25rem 0 0.5rem;
+  font-size: 1.5rem;
+}
+
+.legal-brand {
+  margin: 0;
+  font-weight: 700;
+  color: var(--pc-primary);
+  font-size: 0.875rem;
+}
+
+.legal-prose h2 {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+.legal-prose h3 {
+  margin: 1rem 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.legal-prose p,
+.legal-prose li {
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: var(--pc-text);
+}
+
+.legal-prose ul {
+  margin: 0.35rem 0 0.75rem;
+  padding-left: 1.25rem;
+}
+
+.legal-prose a {
+  color: var(--pc-primary);
+}
+
+.legal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--pc-border);
+  font-size: 0.875rem;
+}
+
+.legal-footer a {
+  color: var(--pc-primary);
+}
+
+.legal-login-note {
+  margin: 1.25rem 0 0;
+  text-align: center;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.legal-login-note a {
+  color: var(--pc-primary);
+}
+
 .list-row {
   display: flex;
   justify-content: space-between;

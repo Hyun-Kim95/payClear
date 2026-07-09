@@ -1,4 +1,4 @@
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { startOAuth } from '../api/client'
 
 export function LoginPage() {
@@ -38,6 +38,11 @@ export function LoginPage() {
         >
           Kakao로 시작
         </button>
+        <p className="legal-login-note muted">
+          로그인 시{' '}
+          <Link to="/terms">이용약관</Link> 및 <Link to="/privacy">개인정보 처리방침</Link>에
+          동의합니다.
+        </p>
       </div>
     </div>
   )

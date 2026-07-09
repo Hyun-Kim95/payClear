@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "start": "serve dist -s -l tcp://0.0.0.0:${PORT:-4173}",
     "lint": "eslint .",
     "preview": "vite preview",
     "cap:sync": "node scripts/cap-sync.mjs",
@@ -23,9 +24,11 @@
     "@capacitor/preferences": "^8.0.1",
     "@capacitor/push-notifications": "^8.1.1",
     "@capgo/capacitor-native-biometric": "^8.5.0",
+    "capacitor-secure-storage-plugin": "^0.13.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "react-router-dom": "^7.17.0"
+    "react-router-dom": "^7.17.0",
+    "serve": "^14.2.4"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",

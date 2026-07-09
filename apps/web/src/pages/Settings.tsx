@@ -15,6 +15,12 @@ export function SettingsPage() {
       <Link to="/settings/notifications" className="list-row">
         <span>알림</span>
       </Link>
+      <Link to="/terms" className="list-row">
+        <span>이용약관</span>
+      </Link>
+      <Link to="/privacy" className="list-row">
+        <span>개인정보 처리방침</span>
+      </Link>
       <button
         type="button"
         className="btn btn--ghost btn--block"
