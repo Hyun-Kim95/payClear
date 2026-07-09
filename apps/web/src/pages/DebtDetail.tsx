@@ -143,6 +143,7 @@ export function DebtDetailPage() {
   const isAgreementLocked = debt.agreement_closed && !isArchived
   const isEditLocked = isArchived || isAgreementLocked
   const canCompleteAgreement = !isEditLocked
+  const canReopenAgreement = isAgreementLocked
   const canArchive = !isArchived
   const balanceText = debt.balance < 0 ? `초과 상환 ${formatKRW(debt.balance)}` : formatKRW(debt.balance)
 
@@ -153,21 +154,6 @@ export function DebtDetailPage() {
       </Link>
 
       {versionConflict && <VersionConflictNotice onRefresh={reload} />}
-
-      {isAgreementLocked && (
-        <div className="state-box" style={{ marginBottom: '1rem', background: 'var(--pc-surface-2)' }}>
-          합의 종료된 채무입니다. 상환·조정·편집이 제한됩니다.
-          <button
-            type="button"
-            className="btn btn--secondary"
-            style={{ marginTop: '0.5rem' }}
-            disabled={actionLoading}
-            onClick={() => setModal('reopen-agreement')}
-          >
-            합의 재개
-          </button>
-        </div>
-      )}
 
       {isArchived && (
         <div className="state-box" style={{ marginBottom: '1rem', background: 'var(--pc-surface-2)' }}>
@@ -254,42 +240,46 @@ export function DebtDetailPage() {
 
       {error && <p className="form-error">{error}</p>}
 
-      <div className="action-row" style={{ marginTop: '1.5rem' }}>
-        <button
-          type="button"
-          className="btn btn--primary"
-          disabled={isEditLocked}
-          onClick={() => navigate(`/debts/${id}/payment`)}
-        >
-          상환
-        </button>
-        <button
-          type="button"
-          className="btn btn--secondary"
-          disabled={isEditLocked}
-          onClick={() => navigate(`/debts/${id}/adjustment`)}
-        >
-          조정
-        </button>
-        <button
-          type="button"
-          className="btn btn--secondary"
-          disabled={isArchived}
-          onClick={() => navigate(`/debts/${id}/share`)}
-        >
-          공유
-        </button>
-        <button
-          type="button"
-          className="btn btn--secondary"
-          disabled={isEditLocked}
-          onClick={() => navigate(`/debts/${id}/edit`)}
-        >
-          편집
-        </button>
-      </div>
+      {(!isEditLocked || !isArchived) && (
+        <div className="action-row" style={{ marginTop: '1.5rem' }}>
+          {!isEditLocked && (
+            <>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => navigate(`/debts/${id}/payment`)}
+              >
+                상환
+              </button>
+              <button
+                type="button"
+                className="btn btn--secondary"
+                onClick={() => navigate(`/debts/${id}/adjustment`)}
+              >
+                조정
+              </button>
+              <button
+                type="button"
+                className="btn btn--secondary"
+                onClick={() => navigate(`/debts/${id}/edit`)}
+              >
+                편집
+              </button>
+            </>
+          )}
+          {!isArchived && (
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => navigate(`/debts/${id}/share`)}
+            >
+              공유
+            </button>
+          )}
+        </div>
+      )}
 
-      {(canCompleteAgreement || canArchive) && (
+      {(canCompleteAgreement || canReopenAgreement || canArchive) && (
         <div className="action-row" style={{ marginTop: '0.75rem' }}>
           {canCompleteAgreement && (
             <button
@@ -299,6 +289,16 @@ export function DebtDetailPage() {
               onClick={() => setModal('complete-agreement')}
             >
               합의 종료
+            </button>
+          )}
+          {canReopenAgreement && (
+            <button
+              type="button"
+              className="btn btn--ghost"
+              disabled={actionLoading}
+              onClick={() => setModal('reopen-agreement')}
+            >
+              합의 재개
             </button>
           )}
           {canArchive && (
