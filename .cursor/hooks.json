@@ -1,19 +1,47 @@
-﻿{
+{
     "version":  1,
     "hooks":  {
-                  "beforeSubmitPrompt":  [
-                                             {
-                                                 "matcher":  "UserPromptSubmit",
-                                                 "command":  "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/kit-start-on-prompt.ps1",
-                                                 "timeout":  120
-                                             }
-                                         ],
                   "beforeShellExecution":  [
                                                {
                                                    "command":  "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/guard-shell.ps1",
                                                    "timeout":  10
                                                }
                                            ],
+                  "beforeSubmitPrompt":  [
+                                             {
+                                                 "matcher":  "UserPromptSubmit",
+                                                 "command":  "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/kit-wiki-on-prompt.ps1",
+                                                 "timeout":  30
+                                             },
+                                             {
+                                                 "matcher":  "UserPromptSubmit",
+                                                 "command":  "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/work-log-on-prompt.ps1",
+                                                 "timeout":  15
+                                             },
+                                             {
+                                                 "matcher":  "UserPromptSubmit",
+                                                 "command":  "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/kit-start-on-prompt.ps1",
+                                                 "timeout":  120
+                                             }
+                                         ],
+                  "sessionStart":  [
+                                       {
+                                           "command":  "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/bootstrap-obsidian-once.ps1",
+                                           "timeout":  30
+                                       }
+                                   ],
+                  "afterFileEdit":  [
+                                        {
+                                            "matcher":  "Write|TabWrite",
+                                            "command":  "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/sync-docs-on-doc-change.ps1",
+                                            "timeout":  20
+                                        },
+                                        {
+                                            "matcher":  "Write|TabWrite",
+                                            "command":  "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/ensure-obsidian-git-hook.ps1",
+                                            "timeout":  20
+                                        }
+                                    ],
                   "afterShellExecution":  [
                                               {
                                                   "matcher":  "npm run dev|pnpm dev|yarn dev|next dev|vite|uvicorn|flask run|ng serve|expo start",

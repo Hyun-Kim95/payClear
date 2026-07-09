@@ -24,12 +24,14 @@ model: inherit
 - 가정, 미확정 항목, 확인 필요사항 정리
 - 화면 단위 또는 기능 단위 범위 정리
 - 정책과 예외사항 정리
+- **수용 기준(AC):** `AC-01` 형식 ID, Given-When-Then 또는 체크리스트, 대상(화면/API/권한), 상태, 자동/수동. [`docs/qa/acceptance-criteria.template.md`](../../docs/qa/acceptance-criteria.template.md), [`docs/qa/atdd-lite.md`](../../docs/qa/atdd-lite.md)
 - PRD **측정=예**이면 측정 목표·North Star 퍼널·이벤트 후보·프라이버시 절 포함 (`docs/product-analytics/policy-and-contract.md` 참조)
 - PRD **성능 게이트=예**이면 비기능·성능 절·플랫폼별 `enabled`(web/app/api)·예산 PLACEHOLDER 포함 (`docs/performance/policy-and-contract.md` 참조)
+- PRD **보안 게이트=예**이면 비기능·보안 절·티어(strict 권장)·축별 `enabled`·인증·권한·민감 데이터 PLACEHOLDER 포함 (`docs/security/policy-and-contract.md` 참조)
 - 구현 가능한 단위로 작업 분해
 
 ## 산출과 게이트
-- Gate 1을 통과할 수 있는 수준의 범위·정책·화면 단위 정의를 남긴다.
+- Gate 1을 통과할 수 있는 수준의 범위·정책·화면 단위 정의·**수용 기준(AC)** 을 남긴다.
 - 미확정 항목은 병렬 구현 전에 해소해야 하는지 표시한다.
 
 ## 기본 전제 (수익·사업자)

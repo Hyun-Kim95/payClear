@@ -15,6 +15,7 @@ alwaysApply: true
 기존 스펙/PRD/계약이 이미 존재하는 연속 개발(운영 중 기능 확장·유지보수·버그 수정)은 Gate 1을 전면 재수행하지 않고, 변경 범위에 대한 간이 점검(요구·화면·계약 영향 확인)으로 대체할 수 있다.
 
 - PRD 또는 동등한 범위 문서: 목표, 사용자 흐름, 핵심/선택 범위, 정책·예외, 미확정 항목 구분
+- **수용 기준(Acceptance Criteria, ATDD-lite):** `AC-01` 형식 ID, Given-When-Then 또는 체크리스트, 대상(화면/API/권한), 상태(기본/로딩/빈/오류/권한). 픽셀·레이아웃이 아닌 **행위·계약·상태** 중심. 템플릿: [`docs/qa/acceptance-criteria.template.md`](../../docs/qa/acceptance-criteria.template.md), 상세: [`docs/qa/atdd-lite.md`](../../docs/qa/atdd-lite.md)
 - 화면 기준: 목업 또는 동등한 화면 스펙(주요 상태·플로우가 식별 가능)
 - API 계약 초안: 엔드포인트(또는 RPC), 요청/응답 필드, 인증·권한, 오류 형식·상태 코드 합의 가능 수준
 
@@ -34,6 +35,7 @@ alwaysApply: true
 - 화면의 로딩·빈·오류·권한 등 상태 UI 정의와 목업/스펙 정합
 - UI가 포함된 범위는 디자인 승인 상태(화면/상태/반응형/다크모드 스펙 확정) 확인
 - 이중 디자인안을 요구하는 범위에서는 안 A/B와 선택 기록(비교표+선택 사유)까지 확인
+- **ATDD-lite (구현 착수 직전):** 위 조건 충족 **후**·제품 구현 **전**에 PRD AC를 기준으로 acceptance test 스켈레톤을 **RED** 상태로 둔다(실패하는 테스트 또는 `test.todo` + AC ID 주석). 핵심 AC 3~7개 이상 권장. 도구는 제품 스택에 맡김(Playwright, Vitest+supertest, pytest 등). **Gherkin 필수 아님.** AC ID는 테스트 파일·describe/it 이름 또는 주석에서 1:1 추적 가능해야 한다. Gate 1 HUMAN·디자인 승인 **전** acceptance test 대량 작성 금지.
 
 계약 변경 시 `document-change`로 즉시 반영하고, 필요하면 `verify-change` 또는 `qa-agent`로 재점검한다.
 병렬 분담 시 담당/의존성/완료 기준은 계획 항목에 명시하고, 전제가 바뀌면 재계획한다.
@@ -44,6 +46,7 @@ alwaysApply: true
 다음을 만족할 때 해당 기능/변경을 완료로 본다.
 
 - 요구사항 대비 구현·문서·계약이 일치
+- **ATDD-lite:** PRD AC 대비 자동화 acceptance test **통과**(해당 범위에 AC가 있을 때). `verify-change`·`qa-agent`가 AC↔테스트 매핑·미커버 AC를 점검한다. 수동만인 AC는 PRD에 `manual` 표기 + `docs/qa/` 실행 기록.
 - 기본·로딩·빈·오류·권한 등 상태 처리 반영(제품 UI 규칙 준수)
 - 웹/앱·반응형·다크모드 영향 점검(해당 시)
 - 회귀 위험 검토(`verify-change` 또는 `qa-agent`)
@@ -55,7 +58,11 @@ alwaysApply: true
 - 오탈자·문구·단일 파일 소규모 수정은 문서 반영을 생략할 수 있다.
 - 문서를 생략한 경우 완료 보고에 생략 사유 또는 후속 문서화 TODO를 남기도록 권장한다.
 
+## ATDD-lite 적용 범위
+- Gate 1 적용 범위(신규 기능·API 계약 변경)와 **동일**. `AGENTS.md` **직접 처리 가능한 예외**·핫픽스·Gate 1 면제 범위는 ATDD 생략(예외 목록 확장은 `AGENTS.md`만).
+- brownfield 유지보수·버그는 Gate 1 간이 점검 + `bugfix-flow` 재현 테스트(가능 시 1개)로 **경량 ATDD**.
+
 ## 병렬 불가에 가까운 경우
 정책·권한 모델·핵심 UX가 미확정이면 병렬을 중단하거나 범위를 쪼개 Gate 1으로 되돌린다.
 
-세부 절차는 `shared/skills/`의 `context-organization`(선행 러브릭, Gate 1~3 **조건 비변경**), `plan-feature`, `start-feature`, `parallel-delivery`, `verify-change`, `document-change`(sync 후 `.cursor/skills/`)와 `project-kit`의 `client-project-lifecycle`(전체 프로젝트)를 따른다.
+세부 절차는 `shared/skills/`의 `context-organization`(선행 러브릭, Gate 1~3 **조건 비변경**), `plan-feature`, `start-feature`, `parallel-delivery`, `verify-change`, `document-change`(sync 후 `.cursor/skills/`)와 `project-kit`의 `client-project-lifecycle`(전체 프로젝트)를 따른다. ATDD-lite 상세: [`docs/qa/atdd-lite.md`](../../docs/qa/atdd-lite.md).

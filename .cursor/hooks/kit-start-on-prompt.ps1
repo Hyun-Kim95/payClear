@@ -62,6 +62,59 @@ function Get-PromptText {
     return ($all -join "`n")
 }
 
+function Get-UserQueryText {
+    param([string]$Prompt)
+    if ([string]::IsNullOrWhiteSpace($Prompt)) { return "" }
+    if ($Prompt -match '(?is)<user_query>\s*(.*?)\s*</user_query>') {
+        return $Matches[1].Trim()
+    }
+    return $Prompt
+}
+
+function Test-AttachedSkillName {
+    param(
+        [string]$Prompt,
+        [string]$SkillName
+    )
+    if ([string]::IsNullOrWhiteSpace($Prompt)) { return $false }
+    $escaped = [regex]::Escape($SkillName)
+    return ($Prompt -match "(?is)<manually_attached_skills>.*?Skill\s+Name:\s*$escaped\b")
+}
+
+function Test-StartSettingPromptIntent {
+    param([string]$Prompt)
+    if ([string]::IsNullOrWhiteSpace($Prompt)) { return $false }
+    if ($Prompt -match '^\s*/(?:kit-)?start-setting(\s+|$)') { return $true }
+    if (Test-AttachedSkillName -Prompt $Prompt -SkillName "start-setting") { return $true }
+    $userQuery = Get-UserQueryText -Prompt $Prompt
+    if ($userQuery -match '^\s*/(?:kit-)?start-setting(\s+|$)') { return $true }
+    return $false
+}
+
+function Test-KitStartPromptIntent {
+    param([string]$Prompt)
+    if ([string]::IsNullOrWhiteSpace($Prompt)) { return $false }
+    if ($Prompt -match '^\s*/kit-start(\s+|$)') { return $true }
+    if (Test-AttachedSkillName -Prompt $Prompt -SkillName "kit-start") { return $true }
+    $userQuery = Get-UserQueryText -Prompt $Prompt
+    if ($userQuery -match '^\s*/kit-start(\s+|$)') { return $true }
+    return $false
+}
+
+function Test-StartPromptIntent {
+    param([string]$Prompt)
+    if ([string]::IsNullOrWhiteSpace($Prompt)) { return $false }
+    if ($Prompt -match '^\s*/start(\s+|$)') {
+        return ($Prompt -notmatch '^\s*/start-(?:setting|feature)\b')
+    }
+    if (Test-AttachedSkillName -Prompt $Prompt -SkillName "kit-start") { return $false }
+    $userQuery = Get-UserQueryText -Prompt $Prompt
+    if ($userQuery -match '^\s*/start(\s+|$)') {
+        return ($userQuery -notmatch '^\s*/start-(?:setting|feature)\b')
+    }
+    return $false
+}
+
 function Read-StateMessage {
     param([string]$StatePath, [string]$Fallback)
     if (-not (Test-Path -LiteralPath $StatePath)) { return $Fallback }
@@ -130,9 +183,9 @@ try {
     $prompt = Get-PromptText -Payload $payload
     if ([string]::IsNullOrWhiteSpace($prompt)) { exit 0 }
 
-    $isSetting = ($prompt -match '^\s*/(?:kit-)?start-setting(\s+|$)')
-    $isKitStart = ($prompt -match '^\s*/kit-start(\s+|$)')
-    $isStart = (-not $isSetting) -and (-not $isKitStart) -and ($prompt -match '^\s*/start(\s+|$)')
+    $isSetting = Test-StartSettingPromptIntent -Prompt $prompt
+    $isKitStart = Test-KitStartPromptIntent -Prompt $prompt
+    $isStart = (-not $isSetting) -and (-not $isKitStart) -and (Test-StartPromptIntent -Prompt $prompt)
     if (-not $isSetting -and -not $isStart -and -not $isKitStart) { exit 0 }
 
     if ($isSetting) {
@@ -188,7 +241,8 @@ try {
         exit 2
     }
 
-    Write-HookJson -Object @{ continue = $true }
+    $msg = Read-StateMessage -StatePath (Join-Path $projectRoot ".cursor\state\kit-start-last.json") -Fallback "Kit start OK."
+    Write-HookJson -Object @{ continue = $true; user_message = $msg }
     exit 0
 }
 catch {

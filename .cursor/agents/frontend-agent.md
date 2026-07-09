@@ -18,6 +18,7 @@ model: inherit
 - **웹/앱** 표현·탐색 방식 차이를 반영해야 할 때
 - **접근성** 또는 **인터랙션** 품질 점검·수정이 필요할 때
 - (Gate 2 이후) 병렬 구현에서 화면이 **API·상태 정의**와 맞물리도록 조정할 때
+- (Gate 2 이후·구현 전) PRD AC 기준 **E2E acceptance test RED** (`start-feature`·`parallel-delivery`). [`docs/qa/atdd-lite.md`](../../docs/qa/atdd-lite.md)
 
 ## 주요 책임
 - 화면 **구조·컴포넌트 배치** 구현 및 개선

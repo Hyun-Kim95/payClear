@@ -58,7 +58,7 @@ Gate 1/2/3의 **정의·적용 범위**는 `.cursor/rules/60-delivery-gates.mdc`
 
 ## 이후(본 스킬 밖, 권한 유지)
 1. `plan-feature` **절차 8~10**에 맞춰, **이미 정한 요지만** `.cursor/rules/60-delivery-gates.mdc` **Gate 1**을 **점검**한다(본 절이 Gate 1 **조건**을 **바꾸지 않는다**는 `.cursor/rules/64-context-organization.mdc`을 따른다).  
-2. Gate 1·적용범위가 **충족**되면 `start-feature` 등으로 **구현**; Gate 2 후 UI+API 병렬이면 `parallel-delivery`는 `60`·`AGENTS`를 따른다.
+2. Gate 1·적용범위가 **충족**되면 `start-feature` 등으로 **구현**; Gate 2 후 **ATDD-lite RED** → UI+API 병렬이면 `parallel-delivery`는 `60`·`AGENTS`를 따른다.
 
 ## 결과물
 - 단계별 짧은 **체크**와 **HUMAN(승인/응답) 기록**

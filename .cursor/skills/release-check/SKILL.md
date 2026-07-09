@@ -30,6 +30,7 @@ description: 배포 직전 최종 점검 절차를 수행해 누락과 릴리즈
 ### 1) 핵심 기능 정상 동작 확인
 
 - 사용자 가치가 큰 핵심 시나리오 3~5개를 우선 점검한다.
+- **ATDD-lite:** PRD `AC-xx`에 매핑된 acceptance test가 **통과**하는지, 미매핑 AC가 없는지 확인한다. [`docs/qa/atdd-lite.md`](../../../docs/qa/atdd-lite.md)
 - 기본 상태, 로딩 상태, 빈 상태, 오류 상태, 권한/제한 상태가 의도대로 동작하는지 확인한다.
 - 기능 간 연결 흐름(예: 목록→상세→수정→저장)이 끊기지 않는지 확인한다.
 
@@ -39,6 +40,7 @@ description: 배포 직전 최종 점검 절차를 수행해 누락과 릴리즈
 - PRD **측정=예**이면 analytics 키/host(또는 ingest URL) 누락·staging/prod 혼선을 점검한다.
 - 배포 환경에서 사용하는 외부 연동 키/엔드포인트/리전 값이 맞는지 확인한다.
 - 민감 정보가 코드/로그/문서에 노출되지 않는지 확인한다.
+- (권장) [`docs/security/vibe-coding-baseline.md`](../../../docs/security/vibe-coding-baseline.md) **배포 전 3항**: 비로그인 API 스모크, 프론트·공개 repo에 LLM·service 키 없음, (BaaS) 신규 테이블 RLS.
 
 ### 3) 모바일/웹 분기, 반응형, 다크모드 영향 확인
 
@@ -54,6 +56,7 @@ description: 배포 직전 최종 점검 절차를 수행해 누락과 릴리즈
 - 예외 발생 시 화면이 중단되지 않고 복구 가능한 경로를 제공하는지 확인한다.
 - PRD **측정=예**이면 `docs/product-analytics/release-checklist.md` **릴리스 3항**(env·동의·PII·샘플 이벤트)을 확인한다.
 - PRD **성능 게이트=예**이면 `docs/performance/release-checklist.md` **릴리스 3항**(`perf-last.json`·활성 플랫폼·회귀)을 확인한다.
+- PRD **보안 게이트=예**이면 `docs/security/release-checklist.md` **릴리스 3항**(`security-last.json`·유출·권한·잔여 리스크)을 확인한다.
 
 ### 5) 필요한 문서/변경 요약 준비 여부 확인
 
@@ -63,6 +66,7 @@ description: 배포 직전 최종 점검 절차를 수행해 누락과 릴리즈
 
 ### 6) 필요 시 qa-agent와 docs-agent 사용
 
+- **생성·검증 분리:** 배포 대상 변경 산출 후 메인 self-verify 금지 → `qa-agent` 독립 검증(handoff: [`docs/agent/agent-brief.md`](../../../docs/agent/agent-brief.md) **9) Verifier Handoff**) → `verify-change`. 상세: `verify-change` **독립 검증 계약**.
 - 검증 범위가 넓거나 회귀 위험이 크면 `qa-agent`를 호출해 교차 점검한다.
 - 문서 정리, 릴리즈 노트, 인수인계가 필요하면 `docs-agent`를 호출한다.
 - 병렬 점검 후에는 단일 통합 담당자가 최종 결과를 합쳐 보고한다.
@@ -92,11 +96,14 @@ description: 배포 직전 최종 점검 절차를 수행해 누락과 릴리즈
 ## 빠른 체크리스트
 
 - [ ] 핵심 기능 정상 동작 확인 완료
+- [ ] (신규 기능·ATDD-lite) PRD AC ↔ acceptance test 통과·미매핑 AC 없음
 - [ ] 환경 설정/필수 변수 누락 없음
 - [ ] 모바일/웹 분기 및 반응형/다크모드 영향 확인 완료
 - [ ] (모바일 앱) app-update 릴리스 3항 확인 완료
 - [ ] (측정=예) product-analytics 릴리스 3항 확인 완료
 - [ ] (성능 게이트=예) performance 릴리스 3항 확인 완료
+- [ ] (보안 게이트=예) security 릴리스 3항 확인 완료
+- [ ] (권장) vibe-coding baseline 배포 전 3항 확인 완료
 - [ ] 콘솔/네트워크/예외 처리 누락 없음
 - [ ] 문서/변경 요약 준비 완료
 - [ ] 필요 시 qa-agent/docs-agent 협업 완료
