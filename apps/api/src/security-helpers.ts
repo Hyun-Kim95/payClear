@@ -5,6 +5,32 @@ import { hashPin, validateAppPin, verifyPinHash } from './pin-crypto.js'
 const APP_PIN_MAX_ATTEMPTS = 5
 const APP_PIN_LOCK_MINUTES = 5
 
+export async function extendPinUnlockSession(userId: string): Promise<void> {
+  const row = await queryOne<{ lock_timeout_minutes: number }>(
+    'SELECT lock_timeout_minutes FROM users WHERE id = $1',
+    [userId],
+  )
+  const minutes = row?.lock_timeout_minutes ?? 5
+  const until = new Date(Date.now() + minutes * 60 * 1000).toISOString()
+  await query('UPDATE users SET pin_unlock_until = $1 WHERE id = $2', [until, userId])
+}
+
+export async function isPinUnlockActive(userId: string): Promise<boolean> {
+  const row = await queryOne<{ app_pin_hash: string | null; pin_unlock_until: unknown }>(
+    'SELECT app_pin_hash, pin_unlock_until FROM users WHERE id = $1',
+    [userId],
+  )
+  if (!row?.app_pin_hash) return true
+  if (!row.pin_unlock_until) return false
+  const until = formatPgTimestamp(row.pin_unlock_until)
+  return until ? new Date(until) > new Date() : false
+}
+
+export async function unlockSession(userId: string): Promise<{ ok: true }> {
+  await extendPinUnlockSession(userId)
+  return { ok: true }
+}
+
 export interface SecurityState {
   pin_set: boolean
   lock_timeout_minutes: number
@@ -60,6 +86,7 @@ export async function setAppPin(
      updated_at = NOW() WHERE id = $2`,
     [hashPin(pin), userId],
   )
+  await extendPinUnlockSession(userId)
   return { ok: true }
 }
 
@@ -115,6 +142,7 @@ export async function verifyAppPin(
     `UPDATE users SET app_pin_failed_count = 0, app_pin_locked_until = NULL WHERE id = $1`,
     [userId],
   )
+  await extendPinUnlockSession(userId)
   return { ok: true }
 }
 

@@ -46,12 +46,15 @@ Gate 2에서 OpenAPI 3 YAML로 승격합니다.
 | 400 | `DEBT_AGREEMENT_CLOSED` | 합의 종료 채무 변경 |
 | 400 | `CONTACT_IN_USE` | 상대 삭제 불가 |
 | 401 | `UNAUTHORIZED` | 미인증·만료 |
+| 423 | `APP_PIN_REQUIRED` | 앱 PIN 잠금 세션 만료 |
+| 400 | `EXCHANGE_INVALID` | OAuth exchange code 무효·만료·재사용 |
 | 401 | `SHARE_PIN_INVALID` | 공유 PIN 불일치 |
 | 403 | `EMAIL_REQUIRED` | 알림 API만(기록은 허용) |
 | 404 | `NOT_FOUND` | 없음·**타인 소유 리소스**(존재 여부 비노출) |
 | 404 | `SHARE_INVALID` | 공유 토큰 무효 |
 | 409 | `VERSION_CONFLICT` | `updated_at` 불일치 |
-| 429 | `RATE_LIMITED` | 전역 제한 |
+| 409 | `PUSH_TOKEN_OWNED` | FCM/Web Push token·endpoint가 다른 사용자 소유 |
+| 429 | `RATE_LIMITED` | 전역·경로별 제한 |
 | 429 | `SHARE_PIN_LOCKED` | 공유 PIN 잠금 |
 | 500 | `INTERNAL_ERROR` | 서버 오류 |
 
@@ -150,7 +153,10 @@ Gate 2에서 OpenAPI 3 YAML로 승격합니다.
 
 ### 2.6 PublicShareView (공개)
 
-`GET /public/share/:token` — Debt 상세와 동일 구조의 읽기 전용 + 타임라인. 기록자·계정 정보 없음.
+`GET` 또는 `POST /public/share/:token` — Debt 상세와 동일 구조의 읽기 전용 + 타임라인. 기록자·계정 정보 없음.
+
+- PIN **없는** 링크: `GET`만 사용.
+- PIN **있는** 링크: `POST` Body `{ "pin": "1234" }` 필수. `GET ?pin=` **금지**(400).
 
 ---
 
@@ -217,8 +223,10 @@ Gate 2에서 OpenAPI 3 YAML로 승격합니다.
 
 | Method | Path | 설명 |
 |--------|------|------|
-| GET | `/public/share/:token` | 조회. Query: `pin` (필요 시) |
-| POST | `/public/share/:token/verify-pin` | `{ pin }` — 세션 쿠키 발급(선택 구현) |
+| GET | `/public/share/:token` | PIN 없는 링크 조회. Query `pin` 사용 시 **400** |
+| POST | `/public/share/:token` | PIN 필요 링크 조회. Body: `{ "pin": "1234" }` |
+
+**CORS:** `WEB_ORIGIN` (+ `CORS_EXTRA_ORIGINS`) 화이트리스트. Origin 헤더 없음(네이티브 앱) 허용.
 
 ### 3.7 알림·설정 (v0.1 최소)
 
@@ -226,7 +234,8 @@ Gate 2에서 OpenAPI 3 YAML로 승격합니다.
 |--------|------|------|
 | GET | `/me/notification-settings` | |
 | PATCH | `/me/notification-settings` | Push·이메일·D-1/당일 (`EMAIL_REQUIRED` 가능) |
-| POST | `/me/push-subscription` | Web Push subscription |
+| POST | `/me/push-subscription` | Web Push subscription. 타 사용자 `endpoint` 시 **409** `PUSH_TOKEN_OWNED` |
+| POST | `/me/fcm-token` | FCM 등록. 타 사용자 `token` 시 **409** `PUSH_TOKEN_OWNED` |
 
 ### 3.8 계정
 
@@ -234,6 +243,23 @@ Gate 2에서 OpenAPI 3 YAML로 승격합니다.
 |--------|------|------|
 | GET | `/me` | 프로필·이메일 인증 여부 |
 | POST | `/me/delete-request` | 계정 삭제 예약(P13) |
+
+### 3.9 인증 (OAuth)
+
+| Method | Path | 설명 |
+|--------|------|------|
+| GET | `/auth/{provider}/start` | OAuth 시작. Query: `client=app` (앱 딥링크) |
+| GET | `/auth/{provider}/callback` | IdP 콜백 → `{WEB_ORIGIN}/auth/callback?code=` 또는 `payclear://auth/callback?code=` |
+| POST | `/auth/exchange` | Body `{ "code": string }` → `{ "token": string }`. TTL 60s·1회용 |
+
+**Breaking:** 콜백 `?token=` **폐지** (ADR-003).
+
+### 3.10 헬스
+
+| Method | Path | 설명 |
+|--------|------|------|
+| GET | `/health` | Liveness `{ "ok": true }` (DB 상태 미포함) |
+| GET | `/internal/health` | `{ ok, db }` — `X-Health-Secret` = `HEALTH_SECRET` |
 
 ---
 
@@ -255,7 +281,7 @@ PRD §7.6 X1~X14 적용. 주요:
 - [ ] SNS OAuth(Google/Kakao) + `users`·`oauth_accounts` 매핑 — [ADR-002](../decisions/ADR-002-sns-auth-local-postgres.md), Supabase 미사용
 - [ ] `GET /auth/{provider}/start`, `GET /auth/{provider}/callback`, JWT 발급
 - [ ] `updated_at` 낙관적 잠금 모든 PATCH
-- [ ] Share PIN 검증: Query vs POST body vs 쿠키
+- [x] Share PIN 검증: POST body (GET `?pin=` deprecate)
 - [ ] 페이지네이션(`GET /debts` cursor)
 
 ---

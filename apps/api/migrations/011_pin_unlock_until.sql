@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_unlock_until TIMESTAMPTZ;

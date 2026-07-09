@@ -88,8 +88,8 @@ npm run android:add       # = cap add android
 ### 3) OAuth 딥링크 (커스텀 스킴)
 
 - 앱은 로그인 시 시스템 브라우저로 `GET {API}/auth/{provider}/start?client=app`을 연다.
-- 서버는 콜백 후 `payclear://auth/callback?token=...`(실패 시 `?error=...`)로 redirect한다.
-- 앱은 `App.addListener('appUrlOpen')`로 이를 가로채 토큰 저장 후 홈으로 이동한다.
+- 서버는 콜백 후 `payclear://auth/callback?code=...`(실패 시 `?error=...`)로 redirect한다.
+- 앱은 `App.addListener('appUrlOpen')`로 code를 받아 `POST /auth/exchange`로 JWT를 교환한 뒤 홈으로 이동한다.
 - 스킴은 `AndroidManifest.xml`의 intent-filter(`android:scheme="payclear"`)로 등록되어 있다.
 - 웹은 기존 `/auth/callback` 쿼리 흐름을 그대로 사용한다.
 - Google/Kakao 콘솔의 redirect URI는 **서버 콜백**이므로 변경 없음. 단, 운영 API 도메인을 허용 목록에 추가해야 한다(계약 §2).

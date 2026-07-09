@@ -1,7 +1,9 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
+import rateLimit from '@fastify/rate-limit'
 import { randomBytes, randomUUID } from 'crypto'
 import 'dotenv/config'
+import { assertProductionEnv, corsAllowedOrigins } from './env-guard.js'
 import { pingDb, query, queryOne } from './db/pool.js'
 import { runMigrations } from './db/migrate.js'
 import { seedDemo } from './db/seed.js'
@@ -33,15 +35,17 @@ import {
   validateReason,
   validationError,
 } from './validate.js'
-import { resolveUserId } from './auth/jwt.js'
+import { resolveUserId, signJwt } from './auth/jwt.js'
 import {
+  consumeExchangeCode,
+  createExchangeCode,
   createOAuthState,
   googleAuthUrl,
   handleGoogleCallback,
   handleKakaoCallback,
   kakaoAuthUrl,
+  redirectWithCode,
   redirectWithError,
-  redirectWithToken,
   verifyOAuthState,
   type OAuthClient,
 } from './auth/oauth.js'
@@ -55,7 +59,9 @@ import {
 } from './share-helpers.js'
 import {
   getSecurityState,
+  isPinUnlockActive,
   setAppPin,
+  unlockSession,
   updateLockTimeout,
   verifyAppPin,
 } from './security-helpers.js'
@@ -73,6 +79,8 @@ import {
   type PaymentStrategy,
 } from './payment-helpers.js'
 
+assertProductionEnv()
+
 await runMigrations()
 // 데모 시드는 SEED_DEMO=true일 때만 실행(운영 기본 off, 데모 데이터 유입 차단).
 // 이미 데모 유저가 있으면 seedDemo 내부에서 skip한다.
@@ -82,9 +90,43 @@ if (process.env.SEED_DEMO === 'true') {
   console.log('Seed skipped: SEED_DEMO !== "true"')
 }
 
-const app = Fastify({ logger: true })
+const app = Fastify({ logger: true, trustProxy: true })
+
+const allowedOrigins = corsAllowedOrigins()
+
+app.addHook('onRoute', (routeOptions) => {
+  const url = routeOptions.url ?? ''
+  const base = { ...(routeOptions.config as Record<string, unknown> | undefined) }
+  if (url.startsWith('/api/v1/auth/')) {
+    routeOptions.config = { ...base, rateLimit: { max: 20, timeWindow: '15 minutes' } }
+  } else if (url.startsWith('/api/v1/public/share/')) {
+    routeOptions.config = { ...base, rateLimit: { max: 30, timeWindow: '15 minutes' } }
+  } else if (url === '/api/v1/me/security/verify-pin') {
+    routeOptions.config = { ...base, rateLimit: { max: 10, timeWindow: '15 minutes' } }
+  }
+})
+
+await app.register(rateLimit, {
+  global: true,
+  max: 300,
+  timeWindow: '1 minute',
+  allowList: (request) => {
+    const path = request.url.split('?')[0]
+    return path === '/api/v1/health' || path.startsWith('/api/v1/internal/')
+  },
+  errorResponseBuilder: () => ({
+    error: { code: 'RATE_LIMITED', message: '잠시 후 다시 시도해 주세요.' },
+  }),
+})
+
 await app.register(cors, {
-  origin: true,
+  origin: (origin, cb) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      cb(null, true)
+      return
+    }
+    cb(new Error('CORS not allowed'), false)
+  },
   methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 })
@@ -137,6 +179,10 @@ function debtEditBlocked(row: DebtRow) {
   return null
 }
 
+function isPinUnlockExempt(path: string): boolean {
+  return path === '/api/v1/me' || path.startsWith('/api/v1/me/security')
+}
+
 app.addHook('onRequest', async (req, reply) => {
   const path = req.url.split('?')[0]
   if (
@@ -146,14 +192,37 @@ app.addHook('onRequest', async (req, reply) => {
   ) {
     return
   }
+  if (path === '/api/v1/internal/health') {
+    const secret = process.env.HEALTH_SECRET
+    if (!secret || req.headers['x-health-secret'] !== secret) {
+      return reply.status(401).send({
+        error: { code: 'UNAUTHORIZED', message: '헬스 시크릿이 올바르지 않습니다.' },
+      })
+    }
+    return
+  }
   const userId = await resolveUserId(req.headers.authorization)
   if (!userId) {
     return reply.status(401).send({ error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다.' } })
   }
+  if (!isPinUnlockExempt(path) && !(await isPinUnlockActive(userId))) {
+    return reply.status(423).send({
+      error: { code: 'APP_PIN_REQUIRED', message: '앱 잠금을 해제해 주세요.' },
+    })
+  }
   ;(req as AuthedRequest).userId = userId
 })
 
-app.get('/api/v1/health', async () => ({ ok: true, db: await pingDb() }))
+app.get('/api/v1/health', async () => ({ ok: true }))
+
+app.get('/api/v1/internal/health', async (_req, reply) => {
+  if (!process.env.HEALTH_SECRET) {
+    return reply.status(503).send({
+      error: { code: 'HEALTH_NOT_CONFIGURED', message: '상세 헬스가 설정되지 않았습니다.' },
+    })
+  }
+  return { ok: true, db: await pingDb() }
+})
 
 /** 운영 크론 수동 실행·검증용. NOTIFY_CRON_SECRET 헤더 필요. */
 app.post<{ Querystring: { dryRun?: string } }>(
@@ -272,6 +341,11 @@ app.post<{ Body: { pin: string } }>('/api/v1/me/security/verify-pin', async (req
   return { ok: true }
 })
 
+app.post('/api/v1/me/security/unlock-session', async (req) => {
+  const { userId } = req as AuthedRequest
+  return unlockSession(userId)
+})
+
 app.patch<{ Body: { lock_timeout_minutes: number } }>('/api/v1/me/security', async (req, reply) => {
   const { userId } = req as AuthedRequest
   const result = await updateLockTimeout(userId, req.body?.lock_timeout_minutes)
@@ -360,6 +434,18 @@ app.post<{
   if (!endpoint || !keys?.p256dh || !keys?.auth) {
     return reply.status(400).send(validationError({ endpoint: '구독 정보가 올바르지 않습니다.' }))
   }
+  const existing = await queryOne<{ user_id: string }>(
+    'SELECT user_id FROM push_subscriptions WHERE endpoint = $1',
+    [endpoint],
+  )
+  if (existing && existing.user_id !== userId) {
+    return reply.status(409).send({
+      error: {
+        code: 'PUSH_TOKEN_OWNED',
+        message: '이 브라우저 푸시 구독은 다른 계정에 등록되어 있습니다.',
+      },
+    })
+  }
   const id = randomUUID()
   await query(
     `INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth)
@@ -392,6 +478,18 @@ app.post<{ Body: { token: string; platform?: string } }>(
       return reply.status(400).send(validationError({ token: 'FCM 토큰이 필요합니다.' }))
     }
     const platform = req.body?.platform?.trim() || 'android'
+    const existing = await queryOne<{ user_id: string }>(
+      'SELECT user_id FROM fcm_tokens WHERE token = $1',
+      [token],
+    )
+    if (existing && existing.user_id !== userId) {
+      return reply.status(409).send({
+        error: {
+          code: 'PUSH_TOKEN_OWNED',
+          message: '이 기기는 다른 계정에 등록되어 있습니다.',
+        },
+      })
+    }
     const id = randomUUID()
     await query(
       `INSERT INTO fcm_tokens (id, user_id, token, platform)
@@ -428,6 +526,23 @@ function resolveClient(client?: string): OAuthClient {
   return client === 'app' ? 'app' : 'web'
 }
 
+app.post<{ Body: { code?: string } }>('/api/v1/auth/exchange', async (req, reply) => {
+  const code = req.body?.code?.trim()
+  if (!code) {
+    return reply.status(400).send({
+      error: { code: 'EXCHANGE_INVALID', message: '교환 코드가 필요합니다.' },
+    })
+  }
+  const userId = await consumeExchangeCode(code)
+  if (!userId) {
+    return reply.status(400).send({
+      error: { code: 'EXCHANGE_INVALID', message: '교환 코드가 유효하지 않거나 만료되었습니다.' },
+    })
+  }
+  const token = await signJwt(userId)
+  return { token }
+})
+
 app.get<{ Querystring: { client?: string } }>(
   '/api/v1/auth/google/start',
   async (req, reply) => {
@@ -454,8 +569,9 @@ app.get<{ Querystring: { code?: string; state?: string; error?: string } }>(
       return reply.redirect(redirectWithError('invalid_state', 'web'))
     }
     try {
-      const jwt = await handleGoogleCallback(code)
-      return reply.redirect(redirectWithToken(jwt, client))
+      const userId = await handleGoogleCallback(code)
+      const exchangeCode = await createExchangeCode(userId)
+      return reply.redirect(redirectWithCode(exchangeCode, client))
     } catch {
       return reply.redirect(redirectWithError('oauth_failed', client))
     }
@@ -487,8 +603,9 @@ app.get<{ Querystring: { code?: string; state?: string; error?: string } }>(
       return reply.redirect(redirectWithError('invalid_state', 'web'))
     }
     try {
-      const jwt = await handleKakaoCallback(code)
-      return reply.redirect(redirectWithToken(jwt, client))
+      const userId = await handleKakaoCallback(code)
+      const exchangeCode = await createExchangeCode(userId)
+      return reply.redirect(redirectWithCode(exchangeCode, client))
     } catch {
       return reply.redirect(redirectWithError('oauth_failed', client))
     }
@@ -498,7 +615,34 @@ app.get<{ Querystring: { code?: string; state?: string; error?: string } }>(
 app.get<{ Params: { token: string }; Querystring: { pin?: string } }>(
   '/api/v1/public/share/:token',
   async (req, reply) => {
-    const result = await buildPublicShareView(req.params.token, req.query.pin)
+    if (req.query.pin) {
+      return reply.status(400).send({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'PIN은 POST로 전송해 주세요.',
+          fields: { pin: 'GET 쿼리 pin은 지원하지 않습니다.' },
+        },
+      })
+    }
+    const result = await buildPublicShareView(req.params.token)
+    if (!result.ok) {
+      const status = result.code === 'SHARE_PIN_LOCKED' ? 429 : result.code === 'SHARE_INVALID' ? 404 : 401
+      return reply.status(status).send({
+        error: {
+          code: result.code,
+          message: result.message,
+          remaining: result.remaining,
+        },
+      })
+    }
+    return result.view
+  },
+)
+
+app.post<{ Params: { token: string }; Body: { pin?: string } }>(
+  '/api/v1/public/share/:token',
+  async (req, reply) => {
+    const result = await buildPublicShareView(req.params.token, req.body?.pin)
     if (!result.ok) {
       const status = result.code === 'SHARE_PIN_LOCKED' ? 429 : result.code === 'SHARE_INVALID' ? 404 : 401
       return reply.status(status).send({

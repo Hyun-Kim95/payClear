@@ -17,6 +17,22 @@ async function req(method: string, path: string, body?: unknown) {
   return { status: res.status, data }
 }
 
+async function publicGet(path: string) {
+  const res = await fetch(`${BASE}${path}`)
+  const data = await res.json().catch(() => ({}))
+  return { status: res.status, data }
+}
+
+async function publicPost(path: string, body: unknown) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const data = await res.json().catch(() => ({}))
+  return { status: res.status, data }
+}
+
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`)
   console.log(`OK: ${msg}`)
@@ -45,22 +61,26 @@ async function main() {
   assert(share.status === 201 && share.data.token, 'create share')
   const token = share.data.token as string
 
-  const pubNoPin = await fetch(`${BASE}/public/share/${token}`)
+  const pubNoPin = await publicGet(`/public/share/${token}`)
   assert(pubNoPin.status === 401, 'public requires pin')
 
-  const pubBad = await fetch(`${BASE}/public/share/${token}?pin=0000`)
-  const badBody = await pubBad.json()
-  assert(pubBad.status === 401 && badBody.error?.code === 'SHARE_PIN_INVALID', 'bad pin')
+  const getPinDeprecated = await publicGet(`/public/share/${token}?pin=1234`)
+  assert(
+    getPinDeprecated.status === 400 && getPinDeprecated.data.error?.code === 'VALIDATION_ERROR',
+    'GET query pin deprecated',
+  )
 
-  const pubOk = await fetch(`${BASE}/public/share/${token}?pin=1234`)
-  const view = await pubOk.json()
-  assert(pubOk.status === 200 && view.contact?.display_name === '익명(상대)', 'anonymous public view')
-  assert(view.reason === undefined, 'include_reason false')
+  const pubBad = await publicPost(`/public/share/${token}`, { pin: '0000' })
+  assert(pubBad.status === 401 && pubBad.data.error?.code === 'SHARE_PIN_INVALID', 'bad pin')
+
+  const pubOk = await publicPost(`/public/share/${token}`, { pin: '1234' })
+  assert(pubOk.status === 200 && pubOk.data.contact?.display_name === '익명(상대)', 'anonymous public view')
+  assert(pubOk.data.reason === undefined, 'include_reason false')
 
   const share2 = await req('POST', `/debts/${debtId}/share`, { expires_in_days: 30 })
   assert(share2.status === 201 && share2.data.token !== token, 'replace share')
 
-  const oldInvalid = await fetch(`${BASE}/public/share/${token}?pin=1234`)
+  const oldInvalid = await publicPost(`/public/share/${token}`, { pin: '1234' })
   assert(oldInvalid.status === 404, 'old token invalid after replace')
 
   const detail = await req('GET', `/debts/${debtId}`)
@@ -71,7 +91,7 @@ async function main() {
   assert(archive.status === 200, 'archive debt')
 
   const newToken = share2.data.token as string
-  const archivedInvalid = await fetch(`${BASE}/public/share/${newToken}`)
+  const archivedInvalid = await publicGet(`/public/share/${newToken}`)
   assert(archivedInvalid.status === 404, 'share invalid after archive')
 
   const blocked = await req('POST', `/debts/${debtId}/share`, {})

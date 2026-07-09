@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
+import { SecureStoragePlugin } from 'capacitor-secure-storage-plugin'
 import { isBrowserOnline } from '../hooks/useOnlineStatus'
 
 const TOKEN_KEY = 'payclear-token'
@@ -12,14 +13,25 @@ const isNative = Capacitor.isNativePlatform()
 let tokenCache: string | null = null
 
 /**
- * 앱 시작 시 1회 호출. 네이티브면 Preferences에서 토큰을 메모리 캐시로 로드한다.
+ * 앱 시작 시 1회 호출. 네이티브면 Secure Storage(레거시 Preferences 마이그레이션 포함)에서 토큰 로드.
  * 웹에서는 sessionStorage를 직접 동기 사용하므로 별도 작업이 없다.
  */
 export async function initAuth(): Promise<void> {
   if (!isNative) return
   try {
-    const { value } = await Preferences.get({ key: TOKEN_KEY })
-    tokenCache = value ?? null
+    const secure = await SecureStoragePlugin.get({ key: TOKEN_KEY }).catch(() => null)
+    if (secure?.value) {
+      tokenCache = secure.value
+      return
+    }
+    const legacy = await Preferences.get({ key: TOKEN_KEY })
+    if (legacy.value) {
+      tokenCache = legacy.value
+      await SecureStoragePlugin.set({ key: TOKEN_KEY, value: legacy.value })
+      await Preferences.remove({ key: TOKEN_KEY })
+    } else {
+      tokenCache = null
+    }
   } catch {
     tokenCache = null
   }
@@ -33,7 +45,9 @@ export function getToken(): string | null {
 export function setToken(token: string) {
   if (isNative) {
     tokenCache = token
-    void Preferences.set({ key: TOKEN_KEY, value: token })
+    void SecureStoragePlugin.set({ key: TOKEN_KEY, value: token }).catch(() => {
+      void Preferences.set({ key: TOKEN_KEY, value: token })
+    })
     return
   }
   sessionStorage.setItem(TOKEN_KEY, token)
@@ -42,6 +56,7 @@ export function setToken(token: string) {
 export function clearToken() {
   if (isNative) {
     tokenCache = null
+    void SecureStoragePlugin.remove({ key: TOKEN_KEY }).catch(() => {})
     void Preferences.remove({ key: TOKEN_KEY })
     return
   }
@@ -53,6 +68,12 @@ export function clearToken() {
 let unauthorizedHandler: (() => void) | null = null
 export function setUnauthorizedHandler(fn: (() => void) | null) {
   unauthorizedHandler = fn
+}
+
+// 서버 PIN 잠금 세션 만료(423 APP_PIN_REQUIRED) 시 /lock 이동.
+let pinRequiredHandler: (() => void) | null = null
+export function setPinRequiredHandler(fn: (() => void) | null) {
+  pinRequiredHandler = fn
 }
 
 export class ApiError extends Error {
@@ -69,6 +90,10 @@ export class ApiError extends Error {
 
 export function isUnauthorizedError(err: unknown): err is ApiError {
   return err instanceof ApiError && err.status === 401 && err.code === 'UNAUTHORIZED'
+}
+
+export function isPinRequiredError(err: unknown): err is ApiError {
+  return err instanceof ApiError && err.status === 423 && err.code === 'APP_PIN_REQUIRED'
 }
 
 export function isVersionConflictError(err: unknown): err is ApiError {
@@ -117,6 +142,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (res.status === 401 && code === 'UNAUTHORIZED') {
       clearToken()
       unauthorizedHandler?.()
+    }
+    if (res.status === 423 && code === 'APP_PIN_REQUIRED') {
+      pinRequiredHandler?.()
     }
     throw new ApiError(
       res.status,
@@ -286,8 +314,8 @@ export interface NotificationSettings {
   remind_d0: boolean
 }
 
-async function publicRequest<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`)
+async function publicRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, init)
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
     throw new ApiError(
@@ -395,8 +423,14 @@ export const api = {
   revokeShare: (debtId: string) =>
     request<void>(`/debts/${debtId}/share`, { method: 'DELETE' }),
   getPublicShare: (token: string, pin?: string) => {
-    const q = pin ? `?pin=${encodeURIComponent(pin)}` : ''
-    return publicRequest<PublicShareView>(`/public/share/${token}${q}`)
+    if (pin) {
+      return publicRequest<PublicShareView>(`/public/share/${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin }),
+      })
+    }
+    return publicRequest<PublicShareView>(`/public/share/${token}`)
   },
   getSecurity: () => request<SecurityState>('/me/security'),
   setPin: (pin: string, current_pin?: string) =>
@@ -409,6 +443,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ pin }),
     }),
+  unlockSession: () => request<{ ok: boolean }>('/me/security/unlock-session', { method: 'POST' }),
   patchSecurity: (lock_timeout_minutes: number) =>
     request<SecurityState>('/me/security', {
       method: 'PATCH',
@@ -450,6 +485,16 @@ export const api = {
 // - 웹 빌드(미설정): 기존 상대경로 '/api/v1' 유지(같은 오리진 / Vite proxy).
 // - 앱 빌드(설정): 'https://<railway-domain>/api/v1' 절대 URL.
 export const API_BASE = import.meta.env.VITE_API_BASE ?? '/api/v1'
+
+/** OAuth one-time code → JWT (POST /auth/exchange). */
+export async function exchangeAuthCode(code: string): Promise<void> {
+  const { token } = await publicRequest<{ token: string }>('/auth/exchange', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  })
+  setToken(token)
+}
 
 export function oauthStartUrl(provider: 'google' | 'kakao'): string {
   // 네이티브 앱은 콜백을 딥링크(payclear://)로 받기 위해 client=app을 붙인다.

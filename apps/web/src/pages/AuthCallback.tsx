@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { setToken } from '../api/client'
+import { exchangeAuthCode } from '../api/client'
 
 export function AuthCallbackPage() {
   const [params] = useSearchParams()
@@ -8,11 +8,17 @@ export function AuthCallbackPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const token = params.get('token')
+    const code = params.get('code')
     const err = params.get('error')
-    if (token) {
-      setToken(token)
-      navigate('/', { replace: true })
+    if (code) {
+      void (async () => {
+        try {
+          await exchangeAuthCode(code)
+          navigate('/', { replace: true })
+        } catch {
+          setError('exchange_failed')
+        }
+      })()
       return
     }
     if (err) {

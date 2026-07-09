@@ -20,6 +20,7 @@ export function LockPage() {
       if (!enabled) return
       const ok = await verifyBiometricUnlock()
       if (ok) {
+        await api.unlockSession()
         unlockSession()
         navigate('/', { replace: true })
       }
@@ -45,6 +46,7 @@ export function LockPage() {
     setError(null)
     const ok = await verifyBiometricUnlock()
     if (ok) {
+      await api.unlockSession()
       unlockSession()
       navigate('/', { replace: true })
       return

@@ -19,7 +19,8 @@
   - 웹 빌드(기본): `VITE_API_BASE` 미설정 → 기존 상대경로 `/api/v1` 유지(Vite proxy/같은 오리진).
   - 앱 빌드: `VITE_API_BASE=https://<railway-domain>/api/v1`.
 - `client.ts`의 `request`/`publicRequest`/`API_BASE`/`oauthStartUrl`는 모두 이 base를 통해 절대 URL을 구성한다.
-- CORS: 백엔드는 현행 `origin: true` 유지(토큰은 Authorization 헤더, 쿠키 미사용이라 credentials 불필요).
+- CORS: `WEB_ORIGIN` (+ 선택 `CORS_EXTRA_ORIGINS`) 화이트리스트. Origin 헤더 없음(네이티브 앱 `fetch`) 허용. `origin: true` 전역 허용은 **폐지**.
+- 운영 부팅: `NODE_ENV=production` 또는 `ALLOW_DEV_TOKEN=false` 시 `assertProductionEnv()` — 약한 `JWT_SECRET`·dev 플래그·데모 시드 차단.
 
 ## 2. OAuth 앱 redirect 계약 (딥링크)
 
@@ -28,10 +29,12 @@
   1. 앱이 시스템 브라우저(`@capacitor/browser`)로 `GET {API}/api/v1/auth/{provider}/start?client=app` 호출.
   2. 서버는 OAuth state에 `client`(`app` | `web`)를 담는다.
   3. 콜백 처리 후 서버 redirect 분기:
-     - `client=app` → `payclear://auth/callback?token=<jwt>` (실패 시 `payclear://auth/callback?error=<code>`)
-     - `client=web`(기본) → 기존 `{WEB_ORIGIN}/auth/callback?token=...` 유지.
-  4. 앱은 `App.addListener('appUrlOpen')`로 `payclear://auth/callback`을 가로채 `token`/`error`를 파싱 → 기존 `setToken` 로직 재사용.
-- 서버 변경 지점: `auth/oauth.ts`의 `createOAuthState`(client 포함), `verifyOAuthState`(client 반환), `redirectWithToken`/`redirectWithError`(client별 분기). `server.ts`의 `/auth/*/start`가 `?client=app` 쿼리를 state로 전달.
+     - `client=app` → `payclear://auth/callback?code=<opaque>` (실패 시 `payclear://auth/callback?error=<code>`)
+     - `client=web`(기본) → `{WEB_ORIGIN}/auth/callback?code=...` (실패 시 `?error=...`).
+  4. 클라이언트는 `POST /api/v1/auth/exchange`로 code → JWT 교환 후 `setToken`.
+  5. 앱은 `App.addListener('appUrlOpen')`로 `payclear://auth/callback`을 가로채 `code`/`error`를 파싱 → exchange 또는 에러 표시.
+- 서버 변경 지점: `auth/oauth.ts`의 exchange code 생성·`redirectWithCode`, `POST /auth/exchange`. `server.ts` 콜백은 JWT URL redirect **하지 않음**.
+- **Breaking:** `?token=` 콜백 폐지 — 웹·API·앱 동시 배포 필요 (ADR-003).
 - 호환성: `client` 미지정 시 `web`으로 동작(기존 웹 로그인 무변경).
 - 사전조건: Google/Kakao 콘솔의 **redirect URI**는 서버 콜백(`{API}/api/v1/auth/{provider}/callback`)이므로 변경 없음. 단, 운영 API 도메인을 redirect URI 허용 목록에 추가 필요.
 
@@ -53,7 +56,7 @@ DELETE /api/v1/me/fcm-token
 
 - 신규 테이블 마이그레이션 `apps/api/migrations/005_fcm_tokens.sql`:
   - `fcm_tokens(id uuid pk, user_id text/uuid fk users, token text unique, platform text, created_at timestamptz, updated_at timestamptz)`
-  - `token` UNIQUE, `ON CONFLICT (token) DO UPDATE`로 user_id 갱신(기존 push_subscriptions 패턴 동일).
+  - `token` UNIQUE. **다른 `user_id`가 이미 소유한 `token`/`endpoint`는 409 `PUSH_TOKEN_OWNED`**. 동일 사용자만 upsert.
 - 에러 형식은 기존 규약 `{ error: { code, message, fields? } }` 준수.
 
 ## 4. 푸시 발송 (FCM)
@@ -73,6 +76,8 @@ DELETE /api/v1/me/fcm-token
 | `PORT` | Railway가 주입 |
 | `JWT_SECRET` | **신규 강한 값으로 재발급**(로컬 .env 값 회전) |
 | `WEB_ORIGIN` | 운영 웹 오리진(웹 호스팅 시) |
+| `CORS_EXTRA_ORIGINS` | 추가 CORS 오리진(쉼표 구분, 선택) |
+| `NODE_ENV` | `production` (운영 권장 — 부팅 가드 활성) |
 | `API_PUBLIC_URL` | `https://<railway-domain>` |
 | `ALLOW_DEV_TOKEN` | `false` (운영 필수) |
 | `EMAIL_VERIFY_DEV` | `false` (운영 필수) |

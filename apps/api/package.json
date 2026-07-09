@@ -17,16 +17,19 @@
     "smoke:phase2": "tsx src/scripts/smoke-phase2.ts",
     "smoke:phase3": "tsx src/scripts/smoke-phase3.ts",
     "smoke:phase4": "tsx src/scripts/smoke-phase4.ts",
+    "smoke:security": "tsx src/scripts/smoke-security-hardening.ts",
+    "smoke:oauth-exchange": "tsx src/scripts/smoke-oauth-exchange.ts",
     "notify:cron": "tsx src/scripts/run-notify-cron.ts",
     "notify:cron:dry": "tsx src/scripts/run-notify-cron.ts --dry-run"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.1",
+    "@fastify/rate-limit": "^10.3.0",
     "dotenv": "^17.2.0",
     "fastify": "^5.4.0",
     "firebase-admin": "^14.1.0",
     "jose": "^6.2.3",
-    "nodemailer": "^8.0.10",
+    "nodemailer": "^9.0.3",
     "pg": "^8.16.3",
     "web-push": "^3.6.7"
   },

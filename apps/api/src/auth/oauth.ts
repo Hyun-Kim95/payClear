@@ -1,11 +1,11 @@
 import { createHmac, randomBytes, randomUUID } from 'crypto'
 import { query, queryOne } from '../db/pool.js'
-import { signJwt } from './jwt.js'
 
 type Provider = 'google' | 'kakao'
 export type OAuthClient = 'app' | 'web'
 
 const STATE_TTL_MS = 10 * 60 * 1000
+const EXCHANGE_CODE_TTL_MS = 60 * 1000
 
 function stateSecret(): string {
   return process.env.JWT_SECRET ?? 'change-me-in-local-dev-only'
@@ -24,8 +24,6 @@ export function createOAuthState(provider: Provider, client: OAuthClient = 'web'
   return `${payload}.${sig}`
 }
 
-// state 검증 후 client('app'|'web')를 반환. 검증 실패 시 null.
-// 하위호환: client 미포함(구버전 state)이면 'web'으로 간주.
 export function verifyOAuthState(state: string, provider: Provider): OAuthClient | null {
   const [payload, sig] = state.split('.')
   if (!payload || !sig) return null
@@ -83,7 +81,6 @@ async function findOrCreateOAuthUser(
   providerUserId: string,
   email?: string | null,
 ): Promise<string> {
-  // 구글/카카오가 검증한 이메일이므로 자동 인증 대상으로 본다.
   const normalizedEmail = email?.trim().toLowerCase() || null
 
   const existing = await queryOne<{ user_id: string }>(
@@ -91,7 +88,6 @@ async function findOrCreateOAuthUser(
     [provider, providerUserId],
   )
   if (existing) {
-    // 기존 유저가 아직 미인증이고, 저장된 이메일이 없거나 제공자 이메일과 같으면 자동 인증 백필.
     if (normalizedEmail) {
       await query(
         `UPDATE users
@@ -104,7 +100,6 @@ async function findOrCreateOAuthUser(
   }
 
   const userId = randomUUID()
-  // 제공자 이메일이 있으면 가입 시점에 인증 완료 상태로 저장.
   await query(
     `INSERT INTO users (id, email, email_verified_at)
      VALUES ($1, $2, CASE WHEN $2::text IS NULL THEN NULL ELSE NOW() END)`,
@@ -145,13 +140,11 @@ export async function handleGoogleCallback(code: string): Promise<string> {
   const profile = (await userRes.json()) as { id?: string; email?: string }
   if (!profile.id) throw new Error('GOOGLE_PROFILE_FAILED')
 
-  const userId = await findOrCreateOAuthUser('google', profile.id, profile.email)
-  return signJwt(userId)
+  return findOrCreateOAuthUser('google', profile.id, profile.email)
 }
 
 export async function handleKakaoCallback(code: string): Promise<string> {
   const clientId = process.env.OAUTH_KAKAO_CLIENT_ID
-  const clientSecret = process.env.OAUTH_KAKAO_CLIENT_SECRET
   if (!clientId) throw new Error('OAUTH_NOT_CONFIGURED')
 
   const redirect = `${apiPublicUrl()}/api/v1/auth/kakao/callback`
@@ -161,6 +154,7 @@ export async function handleKakaoCallback(code: string): Promise<string> {
     redirect_uri: redirect,
     code,
   })
+  const clientSecret = process.env.OAUTH_KAKAO_CLIENT_SECRET
   if (clientSecret) body.set('client_secret', clientSecret)
 
   const tokenRes = await fetch('https://kauth.kakao.com/oauth/token', {
@@ -180,18 +174,38 @@ export async function handleKakaoCallback(code: string): Promise<string> {
   if (!profile.id) throw new Error('KAKAO_PROFILE_FAILED')
 
   const email = profile.kakao_account?.email ?? null
-  const userId = await findOrCreateOAuthUser('kakao', String(profile.id), email)
-  return signJwt(userId)
+  return findOrCreateOAuthUser('kakao', String(profile.id), email)
 }
 
-// 앱 딥링크 커스텀 스킴(계약 §2). 앱은 payclear://auth/callback 을 가로챈다.
+export async function createExchangeCode(userId: string): Promise<string> {
+  const code = randomBytes(24).toString('base64url')
+  const expiresAt = new Date(Date.now() + EXCHANGE_CODE_TTL_MS).toISOString()
+  await query(
+    `INSERT INTO oauth_exchange_codes (code, user_id, expires_at) VALUES ($1, $2, $3)`,
+    [code, userId, expiresAt],
+  )
+  void query('DELETE FROM oauth_exchange_codes WHERE expires_at < NOW()')
+  return code
+}
+
+export async function consumeExchangeCode(code: string): Promise<string | null> {
+  const row = await queryOne<{ user_id: string; expires_at: string; used_at: string | null }>(
+    'SELECT user_id, expires_at, used_at FROM oauth_exchange_codes WHERE code = $1',
+    [code],
+  )
+  if (!row || row.used_at) return null
+  if (new Date(row.expires_at) < new Date()) return null
+  await query('UPDATE oauth_exchange_codes SET used_at = NOW() WHERE code = $1', [code])
+  return row.user_id
+}
+
 const APP_SCHEME = 'payclear'
 
-export function redirectWithToken(jwt: string, client: OAuthClient = 'web'): string {
+export function redirectWithCode(exchangeCode: string, client: OAuthClient = 'web'): string {
   if (client === 'app') {
-    return `${APP_SCHEME}://auth/callback?token=${encodeURIComponent(jwt)}`
+    return `${APP_SCHEME}://auth/callback?code=${encodeURIComponent(exchangeCode)}`
   }
-  return `${webOrigin()}/auth/callback?token=${encodeURIComponent(jwt)}`
+  return `${webOrigin()}/auth/callback?code=${encodeURIComponent(exchangeCode)}`
 }
 
 export function redirectWithError(code: string, client: OAuthClient = 'web'): string {

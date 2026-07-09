@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useState } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
-import { getToken, isNativePlatform, setToken, setUnauthorizedHandler } from './api/client'
+import { getToken, isNativePlatform, setPinRequiredHandler, setUnauthorizedHandler } from './api/client'
 import { Layout } from './components/Layout'
 import { LockProvider } from './lock/LockProvider'
 import { LoginPage } from './pages/Login'
@@ -31,7 +31,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 
 /**
  * 네이티브 앱 전용 OAuth 딥링크 처리.
- * payclear://auth/callback?token=...|error=... 를 가로채 토큰을 저장하거나 에러를 표시한다.
+ * payclear://auth/callback?code=...|error=... 를 가로채 code 교환 후 토큰을 저장한다.
  * 웹에서는 아무 동작도 하지 않는다(기존 /auth/callback 쿼리 흐름 유지).
  */
 function useDeepLinkAuth() {
@@ -43,27 +43,33 @@ function useDeepLinkAuth() {
     let removeListener: (() => void) | undefined
 
     void (async () => {
+      const { exchangeAuthCode } = await import('./api/client')
       const { App: CapApp } = await import('@capacitor/app')
       const handle = await CapApp.addListener('appUrlOpen', ({ url }) => {
         if (!url || !url.startsWith('payclear://')) return
-        let token: string | null = null
+        let code: string | null = null
         let error: string | null = null
         try {
           const parsed = new URL(url)
-          token = parsed.searchParams.get('token')
+          code = parsed.searchParams.get('code')
           error = parsed.searchParams.get('error')
         } catch {
           error = 'invalid_callback'
         }
 
-        // 시스템 브라우저 창 닫기(실패해도 무시).
         void import('@capacitor/browser')
           .then(({ Browser }) => Browser.close())
           .catch(() => {})
 
-        if (token) {
-          setToken(token)
-          navigate('/', { replace: true })
+        if (code) {
+          void (async () => {
+            try {
+              await exchangeAuthCode(code)
+              navigate('/', { replace: true })
+            } catch {
+              navigate('/login', { replace: true, state: { error: 'exchange_failed' } })
+            }
+          })()
           return
         }
         navigate('/login', { replace: true, state: { error: error ?? 'unknown' } })
@@ -85,12 +91,22 @@ function useDeepLinkAuth() {
  */
 function useUnauthorizedRedirect() {
   const navigate = useNavigate()
-  // useLayoutEffect: 자식 페이지 useEffect API 호출보다 먼저 핸들러 등록
   useLayoutEffect(() => {
     setUnauthorizedHandler(() => {
       navigate('/login', { replace: true })
     })
     return () => setUnauthorizedHandler(null)
+  }, [navigate])
+}
+
+function usePinRequiredRedirect() {
+  const navigate = useNavigate()
+  useLayoutEffect(() => {
+    setPinRequiredHandler(() => {
+      sessionStorage.setItem('payclear-locked', '1')
+      navigate('/lock', { replace: true })
+    })
+    return () => setPinRequiredHandler(null)
   }, [navigate])
 }
 
@@ -107,6 +123,7 @@ export default function App() {
 
   useDeepLinkAuth()
   useUnauthorizedRedirect()
+  usePinRequiredRedirect()
 
   return (
     <LockProvider>

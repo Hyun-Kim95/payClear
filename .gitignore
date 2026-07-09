@@ -34,3 +34,10 @@ coverage/
 # Local config (machine-specific)
 .obsidian-ingest.json
 _config/obsidian-repos.json
+
+# Release binaries (do not commit)
+releases/*.apk
+releases/*.aab
+
+# LLM wiki raw dumps (may contain sensitive originals; only distilled notes are committed)
+docs/wiki/_raw/
