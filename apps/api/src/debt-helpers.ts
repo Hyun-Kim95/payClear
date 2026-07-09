@@ -118,3 +118,20 @@ export async function findOrCreateContact(userId: string, displayName: string): 
 export function isArchived(row: DebtRow): boolean {
   return row.status === 'archived'
 }
+
+export function isAgreementLocked(row: DebtRow): boolean {
+  return Boolean(row.agreement_closed) && row.status !== 'archived'
+}
+
+export function archivedError() {
+  return { error: { code: 'DEBT_ARCHIVED', message: '보관된 채무는 수정할 수 없습니다.' } }
+}
+
+export function agreementClosedError() {
+  return {
+    error: {
+      code: 'DEBT_AGREEMENT_CLOSED',
+      message: '합의 종료된 채무는 수정할 수 없습니다. 합의 재개 후 다시 시도해 주세요.',
+    },
+  }
+}

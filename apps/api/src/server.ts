@@ -6,11 +6,14 @@ import { pingDb, query, queryOne } from './db/pool.js'
 import { runMigrations } from './db/migrate.js'
 import { seedDemo } from './db/seed.js'
 import {
+  agreementClosedError,
+  archivedError,
   createContact,
   findOrCreateContact,
   formatPgDate,
   getDebtRow,
   getLedger,
+  isAgreementLocked,
   refreshDebtStatus,
 } from './debt-helpers.js'
 import {
@@ -60,7 +63,9 @@ import { runDueReminders } from './notify/send.js'
 import { startNotifyCronSchedule } from './notify/schedule-cron.js'
 import {
   allocateContactPayment,
+  AllocatePaymentError,
   buildUpcomingDue,
+  isValidDebtDirection,
   isValidPaymentStrategy,
   mapContactRow,
   validateDueSchedule,
@@ -126,8 +131,10 @@ async function mapDebtAsync(row: DebtRow) {
   return mapDebt(row, ledger)
 }
 
-function archivedError() {
-  return { error: { code: 'DEBT_ARCHIVED', message: '보관된 채무는 수정할 수 없습니다.' } }
+function debtEditBlocked(row: DebtRow) {
+  if (row.status === 'archived') return archivedError()
+  if (isAgreementLocked(row)) return agreementClosedError()
+  return null
 }
 
 app.addHook('onRequest', async (req, reply) => {
@@ -647,7 +654,8 @@ app.patch<{
   const { userId } = req as AuthedRequest
   const row = await getDebtRow(req.params.id, userId)
   if (!row) return reply.status(404).send({ error: { code: 'NOT_FOUND', message: '채무를 찾을 수 없습니다.' } })
-  if (row.status === 'archived') return reply.status(400).send(archivedError())
+  const editBlock = debtEditBlocked(row)
+  if (editBlock) return reply.status(400).send(editBlock)
 
   const body = req.body ?? {}
   const fields: Record<string, string> = {}
@@ -728,11 +736,25 @@ app.patch<{
   const action = body.action
   if (action === 'complete_agreement') {
     if (row.status === 'archived') return reply.status(400).send(archivedError())
+    if (row.agreement_closed) {
+      return reply.status(400).send({
+        error: { code: 'ALREADY_AGREEMENT_CLOSED', message: '이미 합의 종료된 채무입니다.' },
+      })
+    }
     await query(
       `UPDATE debts SET agreement_closed = TRUE, status = 'completed',
        completed_at = COALESCE(completed_at, NOW()), updated_at = NOW() WHERE id = $1`,
       [row.id],
     )
+  } else if (action === 'reopen_agreement') {
+    if (row.status === 'archived') return reply.status(400).send(archivedError())
+    if (!row.agreement_closed) {
+      return reply.status(400).send({
+        error: { code: 'NOT_AGREEMENT_CLOSED', message: '합의 종료 상태가 아닙니다.' },
+      })
+    }
+    await query(`UPDATE debts SET agreement_closed = FALSE, updated_at = NOW() WHERE id = $1`, [row.id])
+    await refreshDebtStatus(row.id)
   } else if (action === 'archive') {
     await revokeActiveForDebt(row.id)
     await query(
@@ -792,6 +814,7 @@ app.post<{
     occurred_on: string
     note?: string | null
     strategy?: PaymentStrategy
+    direction: 'lent' | 'borrowed'
   }
 }>('/api/v1/contacts/:id/allocate-payment', async (req, reply) => {
   const { userId } = req as AuthedRequest
@@ -809,6 +832,9 @@ app.post<{
   if (amountErr) fields.amount = amountErr
   const dateErr = validateDateOnOrBeforeToday(body.occurred_on, '일자')
   if (dateErr) fields.occurred_on = dateErr
+  if (!body.direction || !isValidDebtDirection(body.direction)) {
+    fields.direction = '채무 방향(lent 또는 borrowed)을 지정해 주세요.'
+  }
   const strategy = body.strategy ?? (contact.payment_strategy as PaymentStrategy) ?? 'oldest_first'
   if (!isValidPaymentStrategy(strategy)) {
     fields.strategy = '배분 방식이 올바르지 않습니다.'
@@ -822,10 +848,14 @@ app.post<{
       body.amount,
       body.occurred_on,
       strategy,
+      body.direction,
       body.note,
     )
     return reply.status(201).send(result)
   } catch (e) {
+    if (e instanceof AllocatePaymentError) {
+      return reply.status(400).send(validationError({ [e.field]: e.message }))
+    }
     const msg = e instanceof Error ? e.message : '상환 배분에 실패했습니다.'
     return reply.status(400).send(validationError({ amount: msg }))
   }
@@ -1019,7 +1049,8 @@ app.post<{
   if (!row) {
     return reply.status(404).send({ error: { code: 'NOT_FOUND', message: '채무를 찾을 수 없습니다.' } })
   }
-  if (row.status === 'archived') return reply.status(400).send(archivedError())
+  const editBlock = debtEditBlocked(row)
+  if (editBlock) return reply.status(400).send(editBlock)
 
   const body = req.body ?? {}
   const fields: Record<string, string> = {}
@@ -1159,7 +1190,8 @@ app.delete<{ Params: { id: string; entryId: string } }>(
     if (!row) {
       return reply.status(404).send({ error: { code: 'NOT_FOUND', message: '채무를 찾을 수 없습니다.' } })
     }
-    if (row.status === 'archived') return reply.status(400).send(archivedError())
+    const editBlock = debtEditBlocked(row)
+    if (editBlock) return reply.status(400).send(editBlock)
 
     const entry = await queryOne(
       'SELECT * FROM ledger_entries WHERE id = $1 AND debt_id = $2 AND deleted_at IS NULL',

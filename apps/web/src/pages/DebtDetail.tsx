@@ -9,7 +9,7 @@ import {
   type DebtDetail,
 } from '../api/client'
 
-type ModalKind = 'delete-ledger' | 'complete-agreement' | 'archive' | null
+type ModalKind = 'delete-ledger' | 'complete-agreement' | 'reopen-agreement' | 'archive' | null
 
 export function DebtDetailPage() {
   const { id } = useParams()
@@ -78,6 +78,22 @@ export function DebtDetailPage() {
     }
   }
 
+  const runReopenAgreement = async () => {
+    if (!id || !debt) return
+    setActionLoading(true)
+    setError(null)
+    setVersionConflict(false)
+    try {
+      const updated = await api.patchDebtStatus(id, 'reopen_agreement', debt.updated_at)
+      setDebt((prev) => (prev ? { ...prev, ...updated } : prev))
+      setModal(null)
+    } catch (err) {
+      handleActionError(err)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   const runArchive = async () => {
     if (!id || !debt) return
     setActionLoading(true)
@@ -124,7 +140,9 @@ export function DebtDetailPage() {
   if (!debt) return null
 
   const isArchived = debt.status === 'archived'
-  const canCompleteAgreement = !isArchived && !debt.agreement_closed
+  const isAgreementLocked = debt.agreement_closed && !isArchived
+  const isEditLocked = isArchived || isAgreementLocked
+  const canCompleteAgreement = !isEditLocked
   const canArchive = !isArchived
   const balanceText = debt.balance < 0 ? `초과 상환 ${formatKRW(debt.balance)}` : formatKRW(debt.balance)
 
@@ -135,6 +153,21 @@ export function DebtDetailPage() {
       </Link>
 
       {versionConflict && <VersionConflictNotice onRefresh={reload} />}
+
+      {isAgreementLocked && (
+        <div className="state-box" style={{ marginBottom: '1rem', background: 'var(--pc-surface-2)' }}>
+          합의 종료된 채무입니다. 상환·조정·편집이 제한됩니다.
+          <button
+            type="button"
+            className="btn btn--secondary"
+            style={{ marginTop: '0.5rem' }}
+            disabled={actionLoading}
+            onClick={() => setModal('reopen-agreement')}
+          >
+            합의 재개
+          </button>
+        </div>
+      )}
 
       {isArchived && (
         <div className="state-box" style={{ marginBottom: '1rem', background: 'var(--pc-surface-2)' }}>
@@ -200,7 +233,7 @@ export function DebtDetailPage() {
                   </div>
                   {e.note && <div className="muted">{e.note}</div>}
                 </div>
-                {!isArchived && (
+                {!isEditLocked && (
                   <button
                     type="button"
                     className="btn btn--ghost"
@@ -225,7 +258,7 @@ export function DebtDetailPage() {
         <button
           type="button"
           className="btn btn--primary"
-          disabled={isArchived}
+          disabled={isEditLocked}
           onClick={() => navigate(`/debts/${id}/payment`)}
         >
           상환
@@ -233,7 +266,7 @@ export function DebtDetailPage() {
         <button
           type="button"
           className="btn btn--secondary"
-          disabled={isArchived}
+          disabled={isEditLocked}
           onClick={() => navigate(`/debts/${id}/adjustment`)}
         >
           조정
@@ -249,7 +282,7 @@ export function DebtDetailPage() {
         <button
           type="button"
           className="btn btn--secondary"
-          disabled={isArchived}
+          disabled={isEditLocked}
           onClick={() => navigate(`/debts/${id}/edit`)}
         >
           편집
@@ -307,7 +340,10 @@ export function DebtDetailPage() {
         <div className="modal-backdrop" role="presentation" onClick={() => setModal(null)}>
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>합의 종료</h2>
-            <p>잔액이 남아 있어도 「합의 종료」로 표시됩니다. 계속할까요?</p>
+            <p>
+              잔액이 남아 있어도 「합의 종료」로 표시됩니다. 종료 후에는 상환·조정·편집이 제한되며, 합의
+              재개 후에만 다시 수정할 수 있습니다. 계속할까요?
+            </p>
             <div className="action-row">
               <button type="button" className="btn btn--ghost" onClick={() => setModal(null)}>
                 취소
@@ -319,6 +355,28 @@ export function DebtDetailPage() {
                 onClick={() => void runCompleteAgreement()}
               >
                 합의 종료
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modal === 'reopen-agreement' && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setModal(null)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+            <h2>합의 재개</h2>
+            <p>합의 종료를 해제하고 상환·조정·편집을 다시 할 수 있습니다. 계속할까요?</p>
+            <div className="action-row">
+              <button type="button" className="btn btn--ghost" onClick={() => setModal(null)}>
+                취소
+              </button>
+              <button
+                type="button"
+                className="btn btn--primary"
+                disabled={actionLoading}
+                onClick={() => void runReopenAgreement()}
+              >
+                합의 재개
               </button>
             </div>
           </div>

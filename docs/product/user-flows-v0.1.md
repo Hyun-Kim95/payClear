@@ -40,18 +40,19 @@ flowchart LR
 
 ---
 
-## 4. 합의 종료·재개 (E2·P5a·P5b)
+## 4. 합의 종료·재개 (E2·P5a·P5c·X20)
 
 ```mermaid
 stateDiagram-v2
   [*] --> Active
-  Active --> Completed_agreement: 합의 종료
-  Completed_agreement --> Active: 상환 등으로 잔액>0
-  note right of Active
-    active 동안 합의종료 뱃지 숨김
+  Active --> AgreementLocked: 합의 종료
+  AgreementLocked --> Active: 합의 재개_잔액gt0
+  AgreementLocked --> Completed_auto: 합의 재개_잔액0
+  note right of AgreementLocked
+    편집 잠금
+    display_label=합의종료
   end note
-  Active --> Completed_agreement: 잔액 0 AND agreement_closed
-  Completed_agreement --> Completed_agreement: 잔액 0 유지 시 합의종료 라벨 유지
+  AgreementLocked --> AgreementLocked: 잔액0 유지 시 합의종료 라벨 유지_X17
 ```
 
 ---

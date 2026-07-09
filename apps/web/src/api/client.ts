@@ -339,6 +339,7 @@ export const api = {
     input: {
       amount: number
       occurred_on: string
+      direction: 'lent' | 'borrowed'
       note?: string | null
       strategy?: PaymentStrategy
     },
@@ -356,7 +357,11 @@ export const api = {
     request<Debt>('/debts', { method: 'POST', body: JSON.stringify(input) }),
   patchDebt: (id: string, input: PatchDebtInput) =>
     request<Debt>(`/debts/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
-  patchDebtStatus: (id: string, action: 'complete_agreement' | 'archive' | 'unarchive', updated_at: string) =>
+  patchDebtStatus: (
+    id: string,
+    action: 'complete_agreement' | 'reopen_agreement' | 'archive' | 'unarchive',
+    updated_at: string,
+  ) =>
     request<Debt>(`/debts/${id}/status`, {
       method: 'PATCH',
       body: JSON.stringify({ action, updated_at }),

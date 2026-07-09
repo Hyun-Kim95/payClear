@@ -15,7 +15,7 @@ PRD §4.1 기준. 코드·UI 표기는 한국어 사용자-facing / 영문 API e
 | 조정 | `adjustment` | 합의·착오 반영(±), 사유 필수 |
 | 잔액 | `balance` | 계산값, 직접 입력 없음 |
 | 완료 | — | 잔액 0 + 자동 종료 라벨 |
-| 합의 종료 | `agreement_closed` | 수동 종료. **뱃지**는 `status=completed`일 때만(P5b) |
+| 합의 종료 | `agreement_closed` | 수동 종료·**편집 잠금**. 뱃지 「합의 종료」(잔액 무관, P5b) |
 | 표시 라벨 | `display_label` | `완료` \| `합의 종료` \| null |
 | 연체 | `overdue` | active + 예정일 지남 + 잔액>0 |
 | 보관 | `archived` | 목록 숨김, 편집 제한 |

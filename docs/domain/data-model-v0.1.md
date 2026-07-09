@@ -107,22 +107,24 @@ balance = principal
 stateDiagram-v2
   [*] --> active: 채무 생성
   active --> completed: 잔액=0 AND NOT agreement_closed
-  active --> completed: 합의 종료(잔액 무관)
-  completed --> active: 잔액>0
-  active --> completed: agreement_closed AND 잔액=0
+  active --> agreementLocked: 합의 종료
+  agreementLocked --> active: 합의 재개_잔액gt0
+  agreementLocked --> completed: 합의 재개_잔액0
+  completed --> active: 잔액>0 AND NOT agreement_closed
   active --> archived: 보관
   archived --> active: 보관 해제
+  agreementLocked --> archived: 보관
   completed --> archived: 보관
 ```
 
-### 4.1 status·라벨 규칙 (PRD P5·P5a·P5b)
+### 4.1 status·라벨 규칙 (PRD P5·P5a·P5b·P5c)
 
 | 조건 | status | display_label (UI) |
 |------|--------|-------------------|
 | `archived` | archived | — |
-| `agreement_closed` AND `completed` | completed | **합의 종료** |
+| `agreement_closed` | completed | **합의 종료** (잔액 무관) |
 | NOT `agreement_closed` AND `completed` AND balance=0 | completed | **완료** |
-| `active` (잔액任意) | active | — (**`agreement_closed=true`여도** active면 합의 종료 뱃지 **숨김**, X6) |
+| `active` (잔액任意) | active | — |
 | `active` AND balance<0 | active | 잔액 「초과 상환」표기(X18) |
 | `active` AND is_overdue | active | 연체 뱃지(별도) |
 
@@ -131,10 +133,10 @@ stateDiagram-v2
 **ledger 추가·삭제 후** 한 트랜잭션에서:
 
 1. `balance` 계산
-2. `agreement_closed=false` AND `balance=0` → `status=completed`, `completed_at=now`, label 완료
-3. `agreement_closed=true` AND `balance=0` → `status=completed`, label 합의 종료 유지
-4. `balance>0` AND `status=completed` → `status=active`, `completed_at=null` (X5,X6)
-5. `balance<0` → `status=active`, 자동 완료 **안 함**(P6)
+2. `agreement_closed=true` → `status=completed`, label 합의 종료 (잔액 무관)
+3. `agreement_closed=false` AND `balance=0` → `status=completed`, `completed_at=now`, label 완료
+4. `agreement_closed=false` AND `balance≠0` → `status=active`, `completed_at=null`
+5. `balance<0` AND NOT `agreement_closed` → `status=active`, 자동 완료 **안 함**(P6)
 6. `is_overdue` = `status=active` AND `due_on`<today AND `balance>0`
 7. `display_label` = P5b 규칙으로 API 필드 산출(저장 안 함)
 
@@ -143,7 +145,8 @@ stateDiagram-v2
 ### 4.3 보관·공유
 
 - `status→archived`: `share_tokens` 활성분 **revoke**
-- ledger·share 생성 on archived → `DEBT_ARCHIVED`
+- ledger·메타 변경 on archived → `DEBT_ARCHIVED`
+- ledger·메타 변경 on `agreement_closed` → `DEBT_AGREEMENT_CLOSED`
 
 ---
 

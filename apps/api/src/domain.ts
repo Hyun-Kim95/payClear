@@ -62,10 +62,11 @@ export function isOverdue(dueOn: string | null, status: DebtStatus, balance: num
 
 export function deriveStatus(
   current: DebtStatus,
-  _agreementClosed: boolean,
+  agreementClosed: boolean,
   balance: number,
 ): DebtStatus {
   if (current === 'archived') return 'archived'
+  if (agreementClosed) return 'completed'
   if (balance !== 0) return 'active'
   return 'completed'
 }

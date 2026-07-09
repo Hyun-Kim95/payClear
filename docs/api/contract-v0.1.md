@@ -43,6 +43,7 @@ Gate 2에서 OpenAPI 3 YAML로 승격합니다.
 | 400 | `AMOUNT_TOO_LARGE` | 상한 초과 |
 | 400 | `DATE_OUT_OF_RANGE` | 날짜 규칙 위반 |
 | 400 | `DEBT_ARCHIVED` | 보관 채무 변경 |
+| 400 | `DEBT_AGREEMENT_CLOSED` | 합의 종료 채무 변경 |
 | 400 | `CONTACT_IN_USE` | 상대 삭제 불가 |
 | 401 | `UNAUTHORIZED` | 미인증·만료 |
 | 401 | `SHARE_PIN_INVALID` | 공유 PIN 불일치 |
@@ -96,9 +97,9 @@ Gate 2에서 OpenAPI 3 YAML로 승격합니다.
 
 - `balance`: 서버 계산 `principal + sum(adjustments) - sum(payments)`
 - `display_label` (P5b): `null` | `완료` | `합의 종료`
-  - `status=completed` AND `agreement_closed` → `합의 종료`
+  - `status=completed` AND `agreement_closed` → `합의 종료` (잔액 무관)
   - `status=completed` AND NOT `agreement_closed` AND `balance=0` → `완료`
-  - `status=active` → `null` (`agreement_closed`여도 합의 종료 뱃지 **미표시**)
+  - `status=active` → `null`
 
 ### 2.3 LedgerEntry
 
@@ -179,7 +180,7 @@ Gate 2에서 OpenAPI 3 YAML로 승격합니다.
 | POST | `/debts` | 생성 |
 | GET | `/debts/:id` | 상세 + `ledger_entries[]` + `opening` 이벤트 |
 | PATCH | `/debts/:id` | 메타 수정. Body 예: `{ reason, due_on, occurred_on, contact_id, updated_at }` |
-| PATCH | `/debts/:id/status` | `{ action: "complete_agreement" \| "archive" \| "unarchive", updated_at }` |
+| PATCH | `/debts/:id/status` | `{ action: "complete_agreement" \| "reopen_agreement" \| "archive" \| "unarchive", updated_at }` |
 | DELETE | `/debts/:id` | 완전 삭제(2단계는 클라이언트) |
 
 **생성 Body 예**

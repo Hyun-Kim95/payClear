@@ -1,5 +1,5 @@
 /**
- * Phase 1 API smoke (E1~E5, P5b). Requires running API on PORT (default 3910).
+ * Phase 1 API smoke (E1~E5, P5b, agreement lock). Requires running API on PORT (default 3910).
  * Usage: npx tsx src/scripts/smoke-phase1.ts
  */
 const BASE = process.env.SMOKE_BASE ?? 'http://localhost:3910/api/v1'
@@ -22,10 +22,6 @@ async function req(method: string, path: string, body?: unknown) {
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`)
   console.log(`OK: ${msg}`)
-}
-
-function dateOnly(iso: string): string {
-  return iso.slice(0, 10)
 }
 
 async function main() {
@@ -64,40 +60,89 @@ async function main() {
   assert(payRes.data.debt?.display_label === '완료', 'E4 display 완료')
   updated_at = payRes.data.debt.updated_at
 
-  // P5b/X17: agreement closed keeps 합의 종료 label even with balance > 0 after adjustment
+  // Agreement close → locked, 합의 종료 label (X17 at balance 0)
   const agree = await req('PATCH', `/debts/${debtId}/status`, {
     action: 'complete_agreement',
     updated_at,
   })
   assert(agree.status === 200, 'complete_agreement')
-  assert(agree.data.display_label === '합의 종료', 'P5b 합의 종료 label')
+  assert(agree.data.display_label === '합의 종료', 'P5b 합의 종료 label at balance 0')
+  assert(agree.data.agreement_closed === true, 'agreement_closed flag')
   updated_at = agree.data.updated_at
 
-  const adj = await req('POST', `/debts/${debtId}/ledger`, {
+  // E2: ledger blocked while agreement closed
+  const blockedAdj = await req('POST', `/debts/${debtId}/ledger`, {
     type: 'adjustment',
     amount: 10000,
     occurred_on: today,
-    note: 'smoke adjustment reopen',
+    note: 'should be blocked',
   })
-  assert((adj.status === 201 || adj.status === 200) && adj.data.debt, 'adjustment after agreement')
-  assert(adj.data.debt?.status === 'active', 'active after adjustment')
-  assert(adj.data.debt?.display_label !== '합의 종료', 'P5b no agreement badge after active')
-  updated_at = adj.data.debt.updated_at
+  assert(
+    blockedAdj.status === 400 && blockedAdj.data.error?.code === 'DEBT_AGREEMENT_CLOSED',
+    'E2 agreement lock blocks ledger',
+  )
+
+  // Create debt with balance > 0, agreement close → badge still 합의 종료 (AC-AG3)
+  const created2 = await req('POST', '/debts', {
+    contact_name: `Smoke Agree ${Date.now()}`,
+    direction: 'lent',
+    principal: 100000,
+    occurred_on: '2026-01-01',
+    reason: 'smoke agreement with balance',
+  })
+  assert(created2.status === 201 || created2.status === 200, 'create debt with balance')
+  const debtId2 = created2.data.id as string
+  const detail2 = await req('GET', `/debts/${debtId2}`)
+  let updated2 = detail2.data.updated_at
+  const agree2 = await req('PATCH', `/debts/${debtId2}/status`, {
+    action: 'complete_agreement',
+    updated_at: updated2,
+  })
+  assert(agree2.status === 200, 'complete_agreement with balance')
+  assert(agree2.data.status === 'completed', 'AC-AG3 status completed when agreement_closed')
+  assert(agree2.data.display_label === '합의 종료', 'AC-AG3 합의 종료 badge with balance > 0')
+  updated2 = agree2.data.updated_at
+
+  // X20: reopen → can edit
+  const reopen = await req('PATCH', `/debts/${debtId2}/status`, {
+    action: 'reopen_agreement',
+    updated_at: updated2,
+  })
+  assert(reopen.status === 200, 'reopen_agreement')
+  assert(reopen.data.agreement_closed === false, 'agreement_closed cleared')
+  assert(reopen.data.status === 'active', 'E2b active after reopen with balance')
+  updated2 = reopen.data.updated_at
+
+  const adj = await req('POST', `/debts/${debtId2}/ledger`, {
+    type: 'adjustment',
+    amount: 10000,
+    occurred_on: today,
+    note: 'smoke adjustment after reopen',
+  })
+  assert((adj.status === 201 || adj.status === 200) && adj.data.debt, 'adjustment after reopen')
   const entryId = adj.data.entry?.id
   assert(!!entryId, 'adjustment entry id')
 
-  // E1: delete ledger → status recalc
-  const del = await req('DELETE', `/debts/${debtId}/ledger/${entryId}`)
+  // E1: delete ledger → status recalc (on reopened debt)
+  const del = await req('DELETE', `/debts/${debtId2}/ledger/${entryId}`)
   if (del.status !== 200 || !del.data.status) {
     throw new Error(`FAIL: E1 delete ledger (${del.status}) ${JSON.stringify(del.data)}`)
   }
   console.log('OK: E1 delete ledger')
-  assert(del.data.status === 'completed', 'E1 back to completed after delete')
+  assert(del.data.status === 'active', 'E1 still active after delete with balance')
+
+  // Reopen first debt for archive test
+  const reopen1 = await req('PATCH', `/debts/${debtId}/status`, {
+    action: 'reopen_agreement',
+    updated_at,
+  })
+  assert(reopen1.status === 200, 'reopen first debt for archive flow')
+  updated_at = reopen1.data.updated_at
 
   // E5: archive blocks payment
   const arch = await req('PATCH', `/debts/${debtId}/status`, {
     action: 'archive',
-    updated_at: del.data.updated_at,
+    updated_at,
   })
   assert(arch.status === 200 && arch.data.status === 'archived', 'archive debt')
   const blocked = await req('POST', `/debts/${debtId}/ledger`, {
