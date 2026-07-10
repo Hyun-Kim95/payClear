@@ -32,6 +32,14 @@ async function testCorsRejected() {
   assert(acao !== 'https://evil.example.com', 'CORS rejects unknown origin')
 }
 
+async function testCorsCapacitorOrigin() {
+  const res = await fetch(`${BASE}/health`, {
+    headers: { Origin: 'https://localhost' },
+  })
+  const acao = res.headers.get('access-control-allow-origin')
+  assert(acao === 'https://localhost', 'CORS allows Capacitor WebView origin')
+}
+
 async function testPublicHealthLivenessOnly() {
   const res = await fetch(`${BASE}/health`)
   const body = await res.json()
@@ -68,6 +76,7 @@ function testProductionEnvGuard() {
 
 async function main() {
   await testCorsRejected()
+  await testCorsCapacitorOrigin()
   await testPublicHealthLivenessOnly()
   await testFcmSameUserUpsert()
   testProductionEnvGuard()

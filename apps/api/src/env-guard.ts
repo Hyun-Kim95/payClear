@@ -38,8 +38,14 @@ export function assertProductionEnv(): void {
   }
 }
 
+const CAPACITOR_WEBVIEW_ORIGINS = [
+  'https://localhost',
+  'http://localhost',
+  'capacitor://localhost',
+]
+
 export function corsAllowedOrigins(): string[] {
   const origins = [process.env.WEB_ORIGIN ?? 'http://localhost:5173']
   const extra = process.env.CORS_EXTRA_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean) ?? []
-  return [...origins, ...extra]
+  return [...origins, ...CAPACITOR_WEBVIEW_ORIGINS, ...extra]
 }
