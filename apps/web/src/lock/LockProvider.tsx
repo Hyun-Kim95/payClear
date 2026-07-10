@@ -9,8 +9,7 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom'
 import { api, getToken, type SecurityState } from '../api/client'
 
-const LOCK_KEY = 'payclear-locked'
-const ACTIVITY_KEY = 'payclear-last-activity'
+import { SESSION_LOCK_KEY, SESSION_ACTIVITY_KEY } from './session-keys'
 
 function isExemptPath(path: string): boolean {
   return (
@@ -50,11 +49,11 @@ export function LockProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const touchActivity = useCallback(() => {
-    sessionStorage.setItem(ACTIVITY_KEY, String(Date.now()))
+    sessionStorage.setItem(SESSION_ACTIVITY_KEY, String(Date.now()))
   }, [])
 
   const unlockSession = useCallback(() => {
-    sessionStorage.removeItem(LOCK_KEY)
+    sessionStorage.removeItem(SESSION_LOCK_KEY)
     touchActivity()
   }, [touchActivity])
 
@@ -64,15 +63,23 @@ export function LockProvider({ children }: { children: ReactNode }) {
   }, [refreshSecurity])
 
   useEffect(() => {
-    if (!getToken() || isExemptPath(location.pathname)) return
-    if (security && !security.pin_set) {
+    if (!getToken() || !security || security.pin_set) return
+    sessionStorage.removeItem(SESSION_LOCK_KEY)
+    const pinSetupExempt =
+      location.pathname === '/login' ||
+      location.pathname.startsWith('/auth/') ||
+      location.pathname === '/onboarding/pin' ||
+      location.pathname === '/terms' ||
+      location.pathname === '/privacy' ||
+      location.pathname.startsWith('/s/')
+    if (!pinSetupExempt) {
       navigate('/onboarding/pin', { replace: true })
     }
   }, [security, location.pathname, navigate])
 
   useEffect(() => {
     if (!getToken() || isExemptPath(location.pathname) || !security?.pin_set) return
-    if (sessionStorage.getItem(LOCK_KEY) === '1' && location.pathname !== '/lock') {
+    if (sessionStorage.getItem(SESSION_LOCK_KEY) === '1' && location.pathname !== '/lock') {
       navigate('/lock', { replace: true })
     }
   }, [location.pathname, security, navigate])
@@ -80,10 +87,10 @@ export function LockProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const checkIdle = () => {
       if (!security?.pin_set || isExemptPath(location.pathname)) return
-      const last = Number(sessionStorage.getItem(ACTIVITY_KEY) || Date.now())
+      const last = Number(sessionStorage.getItem(SESSION_ACTIVITY_KEY) || Date.now())
       const timeout = (security.lock_timeout_minutes ?? 5) * 60 * 1000
       if (Date.now() - last >= timeout) {
-        sessionStorage.setItem(LOCK_KEY, '1')
+        sessionStorage.setItem(SESSION_LOCK_KEY, '1')
         if (location.pathname !== '/lock') {
           navigate('/lock', { replace: true })
         }

@@ -27,7 +27,11 @@ export async function getWebPushState(): Promise<WebPushState> {
     return { supported: false, subscribed: false }
   }
   try {
-    const reg = await navigator.serviceWorker.ready
+    // serviceWorker.ready는 SW 미등록·dev 환경에서 영구 대기할 수 있어 getRegistration 사용
+    const reg = await navigator.serviceWorker.getRegistration()
+    if (!reg) {
+      return { supported: true, subscribed: false }
+    }
     const sub = await reg.pushManager.getSubscription()
     return { supported: true, subscribed: sub !== null }
   } catch {

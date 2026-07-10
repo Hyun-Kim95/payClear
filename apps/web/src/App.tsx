@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { getToken, isNativePlatform, setPinRequiredHandler, setUnauthorizedHandler } from './api/client'
 import { Layout } from './components/Layout'
 import { LockProvider } from './lock/LockProvider'
+import { SESSION_LOCK_KEY } from './lock/session-keys'
 import { LoginPage } from './pages/Login'
 import { HomePage } from './pages/Home'
 import { DebtsPage } from './pages/Debts'
@@ -45,7 +46,7 @@ function useDeepLinkAuth() {
     let removeListener: (() => void) | undefined
 
     void (async () => {
-      const { exchangeAuthCode } = await import('./api/client')
+      const { exchangeAuthCode, routeAfterOAuthLogin } = await import('./api/client')
       const { App: CapApp } = await import('@capacitor/app')
       const handle = await CapApp.addListener('appUrlOpen', ({ url }) => {
         if (!url || !url.startsWith('payclear://')) return
@@ -67,7 +68,7 @@ function useDeepLinkAuth() {
           void (async () => {
             try {
               await exchangeAuthCode(code)
-              navigate('/', { replace: true })
+              await routeAfterOAuthLogin(navigate)
             } catch {
               navigate('/login', { replace: true, state: { error: 'exchange_failed' } })
             }
@@ -105,7 +106,7 @@ function usePinRequiredRedirect() {
   const navigate = useNavigate()
   useLayoutEffect(() => {
     setPinRequiredHandler(() => {
-      sessionStorage.setItem('payclear-locked', '1')
+      sessionStorage.setItem(SESSION_LOCK_KEY, '1')
       navigate('/lock', { replace: true })
     })
     return () => setPinRequiredHandler(null)

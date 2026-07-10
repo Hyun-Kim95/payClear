@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { exchangeAuthCode } from '../api/client'
+import { exchangeAuthCode, routeAfterOAuthLogin } from '../api/client'
 
 export function AuthCallbackPage() {
   const [params] = useSearchParams()
@@ -14,7 +14,7 @@ export function AuthCallbackPage() {
       void (async () => {
         try {
           await exchangeAuthCode(code)
-          navigate('/', { replace: true })
+          await routeAfterOAuthLogin(navigate)
         } catch {
           setError('exchange_failed')
         }

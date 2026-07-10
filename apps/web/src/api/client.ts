@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
 import { SecureStoragePlugin } from 'capacitor-secure-storage-plugin'
+import { clearClientLockSession } from '../lock/session-keys'
 import { isBrowserOnline } from '../hooks/useOnlineStatus'
 
 const TOKEN_KEY = 'payclear-token'
@@ -513,10 +514,24 @@ export async function exchangeAuthCode(code: string): Promise<{ deletionCancelle
     body: JSON.stringify({ code }),
   })
   setToken(body.token)
+  clearClientLockSession()
   if (body.deletion_cancelled) {
     sessionStorage.setItem(DELETION_CANCELLED_SESSION_KEY, '1')
   }
   return { deletionCancelled: !!body.deletion_cancelled }
+}
+
+/** OAuth 로그인 직후 PIN 설정 여부에 따라 이동 */
+export async function routeAfterOAuthLogin(
+  navigate: (path: string, options?: { replace?: boolean }) => void,
+): Promise<void> {
+  clearClientLockSession()
+  const sec = await api.getSecurity()
+  if (!sec.pin_set) {
+    navigate('/onboarding/pin', { replace: true })
+    return
+  }
+  navigate('/', { replace: true })
 }
 
 export function oauthStartUrl(provider: 'google' | 'kakao'): string {

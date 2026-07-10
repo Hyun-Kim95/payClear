@@ -75,14 +75,20 @@ export function SettingsNotificationsPage() {
       try {
         const s = await api.getNotificationSettings()
         setSettings(s)
-        await refreshPushState()
       } catch (e) {
         setError(e instanceof ApiError ? e.message : '불러오기 실패')
       } finally {
         setLoading(false)
       }
     })()
-  }, [refreshPushState])
+  }, [])
+
+  useEffect(() => {
+    if (!settings) return
+    void refreshPushState().catch(() => {
+      /* 푸시 상태는 부가 정보 — 실패해도 설정 화면은 표시 */
+    })
+  }, [settings, refreshPushState])
 
   const patch = async (patchData: Partial<NotificationSettings>) => {
     setError(null)

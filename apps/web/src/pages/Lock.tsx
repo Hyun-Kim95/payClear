@@ -2,15 +2,27 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiError, isNativePlatform } from '../api/client'
 import { useLock } from '../lock/LockProvider'
+import { SESSION_LOCK_KEY } from '../lock/session-keys'
 import { getBiometricEnabled, verifyBiometricUnlock } from '../native/biometric'
 
 export function LockPage() {
   const navigate = useNavigate()
-  const { unlockSession, security } = useLock()
+  const { unlockSession, security, refreshSecurity } = useLock()
   const [pin, setPin] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [biometricTried, setBiometricTried] = useState(false)
+
+  useEffect(() => {
+    void refreshSecurity().catch(() => {})
+  }, [refreshSecurity])
+
+  useEffect(() => {
+    if (security && !security.pin_set) {
+      sessionStorage.removeItem(SESSION_LOCK_KEY)
+      navigate('/onboarding/pin', { replace: true })
+    }
+  }, [security, navigate])
 
   useEffect(() => {
     if (!isNativePlatform() || biometricTried) return
