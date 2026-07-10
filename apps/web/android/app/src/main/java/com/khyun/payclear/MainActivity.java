@@ -1,4 +1,4 @@
-package com.payclear.app;
+package com.khyun.payclear;
 
 import com.getcapacitor.BridgeActivity;
 

@@ -9,7 +9,7 @@ import type { CapacitorConfig } from '@capacitor/cli'
  *   (android 폴더 생성 후 자동 패치되며, 누락 시 docs/android-build.md 참고).
  */
 const config: CapacitorConfig = {
-  appId: 'com.payclear.app',
+  appId: 'com.khyun.payclear',
   appName: 'payClear',
   webDir: 'dist',
 }

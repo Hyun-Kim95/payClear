@@ -24,7 +24,7 @@
 
 ## 2. OAuth 앱 redirect 계약 (딥링크)
 
-- 앱 패키지(appId): `com.payclear.app`, 커스텀 스킴: `payclear`.
+- 앱 패키지(appId): `com.khyun.payclear`, 커스텀 스킴: `payclear`.
 - 앱 로그인 흐름:
   1. 앱이 시스템 브라우저(`@capacitor/browser`)로 `GET {API}/api/v1/auth/{provider}/start?client=app` 호출.
   2. 서버는 OAuth state에 `client`(`app` | `web`)를 담는다.

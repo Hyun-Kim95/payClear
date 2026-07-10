@@ -1,7 +1,7 @@
 # Play Store 제출 체크리스트 (payClear)
 
 **상태:** 준비 중 (debug APK 테스트 가능 · 스토어 제출 전 항목 남음)  
-**패키지:** `com.payclear.app`  
+**패키지:** `com.khyun.payclear`  
 **운영 API:** `https://api-production-45e07.up.railway.app/api/v1`  
 **운영 웹(약관 URL):** `https://web-production-21be0.up.railway.app`
 
@@ -21,7 +21,7 @@
 
 - [ ] [Google Play Console](https://play.google.com/console) 개인/조직 개발자 등록 완료
 - [ ] 등록비·신원 확인 완료
-- [ ] 앱 생성: 앱 이름 `payClear`, 패키지 `com.payclear.app` (변경 불가에 가깝므로 확정)
+- [ ] 앱 생성: 앱 이름 `payClear`, 패키지 `com.khyun.payclear` (변경 불가에 가깝므로 확정)
 
 ---
 

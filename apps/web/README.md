@@ -38,7 +38,7 @@ cd apps/web && npm run dev
 같은 `apps/web` 코드를 Capacitor로 감싸 안드로이드 앱으로 빌드한다. 통합 규약은
 [`app-railway-integration-v1.md`](../../docs/contracts/app-railway-integration-v1.md)를 따른다.
 
-- appId: `com.payclear.app` / appName: `payClear` / webDir: `dist`
+- appId: `com.khyun.payclear` / appName: `payClear` / webDir: `dist`
 - 네이티브 프로젝트: `apps/web/android/**` (Capacitor 생성물, 빌드 산출물은 git 제외)
 - 서버 URL은 앱에 하드코딩하지 않는다. 번들된 정적 자산을 로드하고 API는 `VITE_API_BASE`(절대 URL)로 호출한다.
 
@@ -100,7 +100,7 @@ npm run android:add       # = cap add android
 
 활성화 절차:
 
-1. Firebase Console → 프로젝트 → Android 앱 등록(패키지명 `com.payclear.app`).
+1. Firebase Console → 프로젝트 → Android 앱 등록(패키지명 `com.khyun.payclear`).
 2. 받은 `google-services.json`을 **`apps/web/android/app/google-services.json`**에 배치한다.
 3. Gradle 설정은 이미 조건부로 적용된다:
    - 루트 `android/build.gradle`: `com.google.gms:google-services` classpath 포함.

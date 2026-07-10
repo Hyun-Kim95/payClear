@@ -7,7 +7,7 @@
 ## 1. Firebase 콘솔 (HUMAN)
 1. https://console.firebase.google.com → 프로젝트 생성(또는 기존 선택).
 2. Android 앱 추가:
-   - 패키지명: `com.payclear.app` (반드시 일치)
+   - 패키지명: `com.khyun.payclear` (반드시 일치)
    - 앱 닉네임/SHA-1은 선택(푸시만 쓰면 SHA-1 불필요).
 3. `google-services.json` 다운로드.
 

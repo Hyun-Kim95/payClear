@@ -7,10 +7,10 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.payclear.app"
+    namespace = "com.khyun.payclear"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.payclear.app"
+        applicationId "com.khyun.payclear"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
