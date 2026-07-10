@@ -65,6 +65,14 @@ import {
   updateLockTimeout,
   verifyAppPin,
 } from './security-helpers.js'
+import {
+  cancelDeletion,
+  cancelDeletionIfScheduled,
+  getDeletionState,
+  scheduleDeletion,
+  purgeDueAccounts,
+} from './account-deletion.js'
+import { startAccountPurgeCronSchedule } from './account-purge-cron.js'
 import { runDueReminders } from './notify/send.js'
 import { startNotifyCronSchedule } from './notify/schedule-cron.js'
 import {
@@ -201,8 +209,21 @@ app.addHook('onRequest', async (req, reply) => {
     }
     return
   }
+  if (path === '/api/v1/internal/notify/run' || path === '/api/v1/internal/account-purge/run') {
+    const secret = process.env.NOTIFY_CRON_SECRET
+    if (!secret || req.headers['x-notify-cron-secret'] !== secret) {
+      return reply.status(401).send({
+        error: { code: 'UNAUTHORIZED', message: '크론 시크릿이 올바르지 않습니다.' },
+      })
+    }
+    return
+  }
   const userId = await resolveUserId(req.headers.authorization)
   if (!userId) {
+    return reply.status(401).send({ error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다.' } })
+  }
+  const userExists = await queryOne<{ id: string }>('SELECT id FROM users WHERE id = $1', [userId])
+  if (!userExists) {
     return reply.status(401).send({ error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다.' } })
   }
   if (!isPinUnlockExempt(path) && !(await isPinUnlockActive(userId))) {
@@ -227,16 +248,19 @@ app.get('/api/v1/internal/health', async (_req, reply) => {
 /** 운영 크론 수동 실행·검증용. NOTIFY_CRON_SECRET 헤더 필요. */
 app.post<{ Querystring: { dryRun?: string } }>(
   '/api/v1/internal/notify/run',
-  async (req, reply) => {
-    const secret = process.env.NOTIFY_CRON_SECRET
-    if (!secret || req.headers['x-notify-cron-secret'] !== secret) {
-      return reply.status(401).send({
-        error: { code: 'UNAUTHORIZED', message: '크론 시크릿이 올바르지 않습니다.' },
-      })
-    }
+  async (req) => {
     const dryRun = req.query.dryRun === 'true'
     const result = await runDueReminders(dryRun)
     return result
+  },
+)
+
+/** P13 탈퇴 유예 만료 계정 영구 삭제. NOTIFY_CRON_SECRET 헤더 필요. */
+app.post<{ Querystring: { dryRun?: string } }>(
+  '/api/v1/internal/account-purge/run',
+  async (req) => {
+    const dryRun = req.query.dryRun === 'true'
+    return purgeDueAccounts(dryRun)
   },
 )
 
@@ -251,13 +275,37 @@ app.get('/api/v1/me', async (req) => {
     'SELECT provider FROM oauth_accounts WHERE user_id = $1',
     [userId],
   )
+  const deletion = await getDeletionState(userId)
   return {
     id: user!.id,
     email: user!.email,
     email_verified_at: user!.email_verified_at,
     email_verified: !!user!.email_verified_at,
     providers: providers.rows.map((r) => r.provider),
+    deletion,
   }
+})
+
+app.post('/api/v1/me/delete-request', async (req) => {
+  const { userId } = req as AuthedRequest
+  const deletion = await scheduleDeletion(userId)
+  return {
+    ok: true,
+    deletion,
+    message:
+      '30일 후 계정이 삭제됩니다. 그 전에 다시 로그인하면 탈퇴가 취소됩니다.',
+  }
+})
+
+app.post('/api/v1/me/delete-request/cancel', async (req, reply) => {
+  const { userId } = req as AuthedRequest
+  const cancelled = await cancelDeletion(userId)
+  if (!cancelled) {
+    return reply.status(400).send({
+      error: { code: 'DELETE_NOT_SCHEDULED', message: '탈퇴 예약이 없습니다.' },
+    })
+  }
+  return { ok: true, deletion: null }
 })
 
 app.post<{ Body: { email: string } }>('/api/v1/me/email', async (req, reply) => {
@@ -539,8 +587,9 @@ app.post<{ Body: { code?: string } }>('/api/v1/auth/exchange', async (req, reply
       error: { code: 'EXCHANGE_INVALID', message: '교환 코드가 유효하지 않거나 만료되었습니다.' },
     })
   }
+  const deletionCancelled = await cancelDeletionIfScheduled(userId)
   const token = await signJwt(userId)
-  return { token }
+  return { token, deletion_cancelled: deletionCancelled }
 })
 
 app.get<{ Querystring: { client?: string } }>(
@@ -1358,6 +1407,11 @@ const notifyCronEnabled =
   (process.env.NOTIFY_CRON_ENABLED !== 'false' &&
     process.env.ALLOW_DEV_TOKEN === 'false')
 
+const accountPurgeCronEnabled =
+  process.env.ACCOUNT_PURGE_CRON_ENABLED === 'true' ||
+  (process.env.ACCOUNT_PURGE_CRON_ENABLED !== 'false' &&
+    process.env.ALLOW_DEV_TOKEN === 'false')
+
 if (notifyCronEnabled) {
   startNotifyCronSchedule()
 } else if (process.env.NOTIFY_CRON_DEV === 'true') {
@@ -1365,6 +1419,10 @@ if (notifyCronEnabled) {
     void runDueReminders(true).then((r) => console.log('[NOTIFY_CRON_DEV]', r))
   }, 60_000)
   console.log('NOTIFY_CRON_DEV: dry-run every 60s')
+}
+
+if (accountPurgeCronEnabled) {
+  startAccountPurgeCronSchedule()
 }
 
 const port = Number(process.env.PORT) || 3910

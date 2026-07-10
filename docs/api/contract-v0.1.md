@@ -45,6 +45,7 @@ Gate 2에서 OpenAPI 3 YAML로 승격합니다.
 | 400 | `DEBT_ARCHIVED` | 보관 채무 변경 |
 | 400 | `DEBT_AGREEMENT_CLOSED` | 합의 종료 채무 변경 |
 | 400 | `CONTACT_IN_USE` | 상대 삭제 불가 |
+| 400 | `DELETE_NOT_SCHEDULED` | 탈퇴 예약 없음(취소 시) |
 | 401 | `UNAUTHORIZED` | 미인증·만료 |
 | 423 | `APP_PIN_REQUIRED` | 앱 PIN 잠금 세션 만료 |
 | 400 | `EXCHANGE_INVALID` | OAuth exchange code 무효·만료·재사용 |
@@ -241,8 +242,35 @@ Gate 2에서 OpenAPI 3 YAML로 승격합니다.
 
 | Method | Path | 설명 |
 |--------|------|------|
-| GET | `/me` | 프로필·이메일 인증 여부 |
-| POST | `/me/delete-request` | 계정 삭제 예약(P13) |
+| GET | `/me` | 프로필·이메일 인증·`deletion` 상태 |
+| POST | `/me/delete-request` | 계정 삭제 예약(P13). PIN 설정 시 잠금 해제 필요(`423`) |
+| POST | `/me/delete-request/cancel` | 탈퇴 예약 수동 취소 |
+
+**`GET /me` — `deletion` 필드**
+
+```json
+{
+  "deletion": {
+    "requested_at": "ISO8601",
+    "scheduled_at": "ISO8601",
+    "days_remaining": 30
+  }
+}
+```
+
+예약 없으면 `"deletion": null`.
+
+**`POST /me/delete-request` 응답**
+
+```json
+{
+  "ok": true,
+  "deletion": { "requested_at": "...", "scheduled_at": "...", "days_remaining": 30 },
+  "message": "30일 후 계정이 삭제됩니다. 그 전에 다시 로그인하면 탈퇴가 취소됩니다."
+}
+```
+
+이미 예약된 경우 **200 idempotent**(기존 `requested_at` 유지).
 
 ### 3.9 인증 (OAuth)
 
@@ -250,16 +278,18 @@ Gate 2에서 OpenAPI 3 YAML로 승격합니다.
 |--------|------|------|
 | GET | `/auth/{provider}/start` | OAuth 시작. Query: `client=app` (앱 딥링크) |
 | GET | `/auth/{provider}/callback` | IdP 콜백 → `{WEB_ORIGIN}/auth/callback?code=` 또는 `payclear://auth/callback?code=` |
-| POST | `/auth/exchange` | Body `{ "code": string }` → `{ "token": string }`. TTL 60s·1회용 |
+| POST | `/auth/exchange` | Body `{ "code": string }` → `{ "token": string, "deletion_cancelled"?: boolean }`. TTL 60s·1회용. 유예 중 재로그인 시 `deletion_cancelled: true` |
 
 **Breaking:** 콜백 `?token=` **폐지** (ADR-003).
 
-### 3.10 헬스
+### 3.10 헬스·내부 크론
 
 | Method | Path | 설명 |
 |--------|------|------|
 | GET | `/health` | Liveness `{ "ok": true }` (DB 상태 미포함) |
 | GET | `/internal/health` | `{ ok, db }` — `X-Health-Secret` = `HEALTH_SECRET` |
+| POST | `/internal/notify/run` | 알림 크론 수동 실행 — `X-Notify-Cron-Secret` |
+| POST | `/internal/account-purge/run` | P13 유예 만료 계정 purge — `X-Notify-Cron-Secret`, Query `dryRun=true` |
 
 ---
 

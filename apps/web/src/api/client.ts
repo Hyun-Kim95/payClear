@@ -298,6 +298,19 @@ export interface MeProfile {
   email_verified_at: string | null
   email_verified: boolean
   providers: string[]
+  deletion: DeletionState | null
+}
+
+export interface DeletionState {
+  requested_at: string
+  scheduled_at: string
+  days_remaining: number
+}
+
+export interface AccountDeletionResponse {
+  ok: boolean
+  deletion: DeletionState
+  message: string
 }
 
 export interface SecurityState {
@@ -479,6 +492,10 @@ export const api = {
       method: 'DELETE',
       body: JSON.stringify({ token }),
     }),
+  requestAccountDeletion: () =>
+    request<AccountDeletionResponse>('/me/delete-request', { method: 'POST' }),
+  cancelAccountDeletion: () =>
+    request<{ ok: boolean; deletion: null }>('/me/delete-request/cancel', { method: 'POST' }),
 }
 
 // 빌드타임 환경변수 VITE_API_BASE로 API base를 주입한다.
@@ -486,14 +503,20 @@ export const api = {
 // - 앱 빌드(설정): 'https://<railway-domain>/api/v1' 절대 URL.
 export const API_BASE = import.meta.env.VITE_API_BASE ?? '/api/v1'
 
+export const DELETION_CANCELLED_SESSION_KEY = 'payclear-deletion-cancelled'
+
 /** OAuth one-time code → JWT (POST /auth/exchange). */
-export async function exchangeAuthCode(code: string): Promise<void> {
-  const { token } = await publicRequest<{ token: string }>('/auth/exchange', {
+export async function exchangeAuthCode(code: string): Promise<{ deletionCancelled: boolean }> {
+  const body = await publicRequest<{ token: string; deletion_cancelled?: boolean }>('/auth/exchange', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code }),
   })
-  setToken(token)
+  setToken(body.token)
+  if (body.deletion_cancelled) {
+    sessionStorage.setItem(DELETION_CANCELLED_SESSION_KEY, '1')
+  }
+  return { deletionCancelled: !!body.deletion_cancelled }
 }
 
 export function oauthStartUrl(provider: 'google' | 'kakao'): string {

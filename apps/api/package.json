@@ -19,6 +19,7 @@
     "smoke:phase4": "tsx src/scripts/smoke-phase4.ts",
     "smoke:security": "tsx src/scripts/smoke-security-hardening.ts",
     "smoke:oauth-exchange": "tsx src/scripts/smoke-oauth-exchange.ts",
+    "smoke:account-deletion": "tsx src/scripts/smoke-account-deletion.ts",
     "notify:cron": "tsx src/scripts/run-notify-cron.ts",
     "notify:cron:dry": "tsx src/scripts/run-notify-cron.ts --dry-run"
   },

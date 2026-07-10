@@ -3,14 +3,23 @@ import { startOAuth } from '../api/client'
 
 export function LoginPage() {
   const location = useLocation()
-  // 앱 딥링크 로그인 실패 시 App에서 navigate('/login', { state: { error } })로 전달한다.
   const oauthError = (location.state as { error?: string } | null)?.error ?? null
+  const deletionScheduled =
+    (location.state as { accountDeletionScheduled?: boolean } | null)?.accountDeletionScheduled ?? false
 
   return (
     <div className="auth-wrap">
       <div className="auth-card">
         <h1>payClear</h1>
         <p className="muted">개인 채무를 투명하게 관리하세요</p>
+
+        {deletionScheduled && (
+          <p className="state-box" role="status" style={{ marginTop: '1rem', fontSize: '0.875rem' }}>
+            탈퇴가 예약되었습니다. 30일 후 계정이 삭제됩니다.
+            <br />
+            <strong>30일 이내 다시 로그인하면 탈퇴가 취소됩니다.</strong>
+          </p>
+        )}
 
         {oauthError && (
           <p className="form-error" role="alert" style={{ marginTop: '1rem' }}>

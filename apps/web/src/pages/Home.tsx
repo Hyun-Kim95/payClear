@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
-import { api, formatDateYMD, formatKRW, isUnauthorizedError, type Summary, type UpcomingDueItem } from '../api/client'
+import {
+  api,
+  DELETION_CANCELLED_SESSION_KEY,
+  formatDateYMD,
+  formatKRW,
+  isUnauthorizedError,
+  type Summary,
+  type UpcomingDueItem,
+} from '../api/client'
 
 function upcomingDueLink(u: UpcomingDueItem): string {
   if (u.kind === 'contact_schedule') {
@@ -17,6 +25,14 @@ export function HomePage() {
   const [error, setError] = useState<string | null>(null)
   const [authExpired, setAuthExpired] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [deletionCancelledNotice, setDeletionCancelledNotice] = useState(false)
+
+  useEffect(() => {
+    if (sessionStorage.getItem(DELETION_CANCELLED_SESSION_KEY)) {
+      sessionStorage.removeItem(DELETION_CANCELLED_SESSION_KEY)
+      setDeletionCancelledNotice(true)
+    }
+  }, [])
 
   useEffect(() => {
     api
@@ -47,6 +63,11 @@ export function HomePage() {
 
   return (
     <div>
+      {deletionCancelledNotice && (
+        <p className="state-box" role="status" style={{ marginBottom: '1rem' }}>
+          탈퇴 예정이 취소되었습니다. 계정을 계속 이용할 수 있습니다.
+        </p>
+      )}
       <section className="hero-summary">
         <div className="hero-summary__label">받을 돈</div>
         <div className="hero-summary__amount">{formatKRW(data.total_receivable)}</div>
