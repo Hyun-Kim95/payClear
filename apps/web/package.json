@@ -14,7 +14,8 @@
     "cap:assets": "capacitor-assets generate --android",
     "android:add": "cap add android",
     "android:open": "cap open android",
-    "android:run": "cap run android"
+    "android:run": "cap run android",
+    "android:bundle": "node scripts/android-bundle.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
