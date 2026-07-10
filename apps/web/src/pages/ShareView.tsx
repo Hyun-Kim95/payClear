@@ -76,19 +76,22 @@ export function ShareViewPage() {
   if (needsPin || (error?.code === 'SHARE_PIN_INVALID' && !view)) {
     return (
       <div className="share-page">
-        <form className="share-card" onSubmit={submitPin}>
+        <form className="share-card form-stack" onSubmit={submitPin}>
           <h1>공유 보기</h1>
           <p className="muted">PIN을 입력하세요</p>
-          <input
-            className="input"
-            type="password"
-            inputMode="numeric"
-            maxLength={6}
-            value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-            placeholder="PIN"
-            required
-          />
+          <label className="field">
+            <span>PIN</span>
+            <input
+              className="input"
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+              placeholder="PIN"
+              required
+            />
+          </label>
           {error && <p className="form-error">{error.message}</p>}
           <button type="submit" className="btn btn--primary btn--block" disabled={submitting}>
             확인
