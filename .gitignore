@@ -39,5 +39,10 @@ _config/obsidian-repos.json
 releases/*.apk
 releases/*.aab
 
+# Android upload signing (never commit)
+*.keystore
+*.jks
+**/keystore.properties
+
 # LLM wiki raw dumps (may contain sensitive originals; only distilled notes are committed)
 docs/wiki/_raw/
