@@ -63,8 +63,7 @@ export function ShareViewPage() {
         <p className="detail-balance">{formatKRW(debt.balance)}</p>
         <Timeline events={debt.timeline} />
         <footer className="share-footer">
-          <p>payClear에서 생성된 읽기 전용 보기입니다.</p>
-          <p className="muted">법적 효력이 없으며 참고용으로만 사용하세요.</p>
+          <p>payClear에서 생성된 읽기 전용입니다.</p>
           <p className="muted">토큰: {token}</p>
         </footer>
       </div>

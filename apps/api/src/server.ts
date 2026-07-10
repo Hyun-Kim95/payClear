@@ -1336,15 +1336,13 @@ app.post<{
 
   const body = req.body ?? {}
   const fields: Record<string, string> = {}
-  const allowedDays = [30, 90, 180, null] as const
-  let expiresIn: number | null = 90
+  const allowedDays = [7, 30, 90, 180] as const
+  let expiresIn: number = 30
   if (body.expires_in_days !== undefined) {
-    if (body.expires_in_days === null) {
-      expiresIn = null
-    } else if ([30, 90, 180].includes(body.expires_in_days)) {
+    if (typeof body.expires_in_days === 'number' && allowedDays.includes(body.expires_in_days as (typeof allowedDays)[number])) {
       expiresIn = body.expires_in_days
     } else {
-      fields.expires_in_days = '만료일은 30, 90, 180 또는 무제한(null)만 가능합니다.'
+      fields.expires_in_days = '만료일은 7, 30, 90, 180일만 가능합니다.'
     }
   }
   let pin: string | null = null

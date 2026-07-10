@@ -217,7 +217,7 @@ Gate 2에서 OpenAPI 3 YAML로 승격합니다.
 | Method | Path | 설명 |
 |--------|------|------|
 | GET | `/debts/:id/share` | 활성 링크 조회 |
-| POST | `/debts/:id/share` | `{ expires_in_days?, pin?, anonymous?, include_reason? }` — 기존 링크 회수 후 생성. `include_reason` 기본 `true`(§7.4) |
+| POST | `/debts/:id/share` | `{ expires_in_days?, pin?, anonymous?, include_reason? }` — 기존 링크 회수 후 생성. `expires_in_days`는 `7`/`30`/`90`/`180`(기본 `30`, 무제한 없음). `include_reason` 기본 `true`(§7.4) |
 | DELETE | `/debts/:id/share` | 회수 |
 
 ### 3.6 Public (인증 없음)

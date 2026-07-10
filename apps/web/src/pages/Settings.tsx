@@ -177,14 +177,15 @@ export function SettingsPage() {
               <strong>30일 이내 다시 로그인하면 탈퇴가 취소됩니다.</strong>
             </p>
             {modalStep === 'pin' && (
-              <label className="form-field" style={{ marginTop: '1rem' }}>
+              <label className="field" style={{ marginTop: '1rem', marginBottom: 0 }}>
                 <span>PIN 확인</span>
                 <input
+                  className="input"
                   type="password"
                   inputMode="numeric"
                   autoComplete="off"
                   value={pin}
-                  onChange={(e) => setPin(e.target.value)}
+                  onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
                   maxLength={6}
                 />
               </label>

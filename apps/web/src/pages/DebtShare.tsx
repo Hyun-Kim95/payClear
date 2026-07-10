@@ -3,16 +3,16 @@ import { Link, useParams } from 'react-router-dom'
 import { api, ApiError, type ShareLink } from '../api/client'
 
 const EXPIRY_OPTIONS = [
-  { value: 30, label: '30일' },
-  { value: 90, label: '90일 (기본)' },
+  { value: 7, label: '7일' },
+  { value: 30, label: '30일 (기본)' },
+  { value: 90, label: '90일' },
   { value: 180, label: '180일' },
-  { value: 'none', label: '무제한' },
 ] as const
 
 export function DebtSharePage() {
   const { id } = useParams()
   const [active, setActive] = useState<ShareLink | null>(null)
-  const [expiresIn, setExpiresIn] = useState<string>('90')
+  const [expiresIn, setExpiresIn] = useState<string>('30')
   const [pin, setPin] = useState('')
   const [anonymous, setAnonymous] = useState(false)
   const [includeReason, setIncludeReason] = useState(true)
@@ -38,10 +38,8 @@ export function DebtSharePage() {
     setSubmitting(true)
     setError(null)
     try {
-      const expires_in_days =
-        expiresIn === 'none' ? null : Number(expiresIn)
       const created = await api.createShare(id, {
-        expires_in_days,
+        expires_in_days: Number(expiresIn),
         pin: pin.trim() || null,
         anonymous,
         include_reason: includeReason,
@@ -115,7 +113,7 @@ export function DebtSharePage() {
           <span>만료</span>
           <select className="input" value={expiresIn} onChange={(e) => setExpiresIn(e.target.value)}>
             {EXPIRY_OPTIONS.map((o) => (
-              <option key={o.label} value={o.value === 'none' ? 'none' : String(o.value)}>
+              <option key={o.value} value={String(o.value)}>
                 {o.label}
               </option>
             ))}

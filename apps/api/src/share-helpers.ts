@@ -102,7 +102,7 @@ export async function createShareToken(
 ): Promise<ShareTokenRow> {
   await revokeActiveForDebt(debtId)
 
-  const days = opts.expires_in_days === undefined ? 90 : opts.expires_in_days
+  const days = opts.expires_in_days === undefined ? 30 : opts.expires_in_days
   const expiresAt =
     days === null ? null : new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
 
