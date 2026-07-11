@@ -26,6 +26,7 @@ import { PinOnboardingPage } from './pages/PinOnboarding'
 import { LockPage } from './pages/Lock'
 import { LegalPrivacyPage } from './pages/LegalPrivacy'
 import { LegalTermsPage } from './pages/LegalTerms'
+import { AccountDeletionPage } from './pages/AccountDeletion'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   if (!getToken()) return <Navigate to="/login" replace />
@@ -134,6 +135,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/privacy" element={<LegalPrivacyPage />} />
         <Route path="/terms" element={<LegalTermsPage />} />
+        <Route path="/delete-account" element={<AccountDeletionPage />} />
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route path="/s/:token" element={<ShareViewPage />} />
         <Route
