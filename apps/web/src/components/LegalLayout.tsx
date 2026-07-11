@@ -39,6 +39,8 @@ export function LegalLayout({
           <span aria-hidden="true">·</span>
           <Link to="/delete-account">계정 삭제</Link>
           <span aria-hidden="true">·</span>
+          <Link to="/delete-data">데이터 삭제</Link>
+          <span aria-hidden="true">·</span>
           {loggedIn ? <Link to="/settings">설정</Link> : <Link to="/login">로그인</Link>}
         </footer>
       </article>

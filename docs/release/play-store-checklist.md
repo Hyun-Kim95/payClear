@@ -45,6 +45,7 @@ Play Console·스토어에 **HTTPS 고정 URL**을 넣습니다. (앱 번들 경
 | 이용약관 | https://web-production-21be0.up.railway.app/terms |
 
 - [ ] 계정 삭제 URL: https://web-production-21be0.up.railway.app/delete-account
+- [ ] 데이터 삭제 URL: https://web-production-21be0.up.railway.app/delete-data
 - [ ] 제출 전 「법무 검토 전」 표기 제거 여부 결정 (`LegalLayout.tsx`)
 - [ ] Railway **api** `WEB_ORIGIN` = `https://web-production-21be0.up.railway.app` (OAuth 웹 콜백·CORS)
 

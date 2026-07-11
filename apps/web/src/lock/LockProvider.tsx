@@ -21,7 +21,8 @@ function isExemptPath(path: string): boolean {
     path === '/lock' ||
     path === '/terms' ||
     path === '/privacy' ||
-    path === '/delete-account'
+    path === '/delete-account' ||
+    path === '/delete-data'
   )
 }
 
@@ -75,6 +76,7 @@ export function LockProvider({ children }: { children: ReactNode }) {
       location.pathname === '/terms' ||
       location.pathname === '/privacy' ||
       location.pathname === '/delete-account' ||
+      location.pathname === '/delete-data' ||
       location.pathname.startsWith('/s/')
     if (!pinSetupExempt) {
       navigate('/onboarding/pin', { replace: true })
