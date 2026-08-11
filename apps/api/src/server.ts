@@ -82,6 +82,7 @@ import {
   isValidDebtDirection,
   isValidPaymentStrategy,
   mapContactRow,
+  aggregateContactBalances,
   validateDueSchedule,
   type DueScheduleType,
   type PaymentStrategy,
@@ -972,11 +973,33 @@ app.patch<{
 
 app.get('/api/v1/contacts', async (req) => {
   const { userId } = req as AuthedRequest
-  const res = await query(
-    'SELECT * FROM contacts WHERE user_id = $1 ORDER BY display_name',
-    [userId],
+  const [res, debtsRes] = await Promise.all([
+    query('SELECT * FROM contacts WHERE user_id = $1 ORDER BY display_name', [userId]),
+    query<DebtRow>(
+      `SELECT d.*, c.display_name AS contact_name FROM debts d
+       JOIN contacts c ON c.id = d.contact_id
+       WHERE d.user_id = $1`,
+      [userId],
+    ),
+  ])
+  const mappedDebts = await Promise.all(
+    debtsRes.rows.map((r) => mapDebtAsync(r as unknown as DebtRow)),
   )
-  return { items: res.rows.map((r) => mapContactRow(r as Record<string, unknown>)) }
+  const balancesByContact = aggregateContactBalances(
+    mappedDebts.map((d) => ({
+      contact_id: d.contact_id!,
+      status: d.status,
+      is_split: d.is_split,
+      balance: d.balance,
+      direction: d.direction,
+    })),
+  )
+  return {
+    items: res.rows.map((r) => {
+      const id = (r as Record<string, unknown>).id as string
+      return mapContactRow(r as Record<string, unknown>, balancesByContact.get(id))
+    }),
+  }
 })
 
 app.get<{ Params: { id: string } }>('/api/v1/contacts/:id', async (req, reply) => {
@@ -996,8 +1019,17 @@ app.get<{ Params: { id: string } }>('/api/v1/contacts/:id', async (req, reply) =
     [req.params.id, userId],
   )
   const debts = await Promise.all(debtsRes.rows.map((r) => mapDebtAsync(r as unknown as DebtRow)))
+  const balances = aggregateContactBalances(
+    debts.map((d) => ({
+      contact_id: d.contact_id!,
+      status: d.status,
+      is_split: d.is_split,
+      balance: d.balance,
+      direction: d.direction,
+    })),
+  ).get(req.params.id)
 
-  return { ...mapContactRow(contact as Record<string, unknown>), debts }
+  return { ...mapContactRow(contact as Record<string, unknown>, balances), debts }
 })
 
 app.post<{

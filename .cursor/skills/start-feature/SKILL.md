@@ -8,6 +8,12 @@ description: Gate 1 확인 후 구현·검증·문서화; 필요 시 parallel-de
 ## 목적
 신규 기능 요청을 안정적으로 구현하기 위한 기본 플로우를 제공한다.
 
+## 왜 이 순서인가 (짧게)
+- **Gate 1 선행:** 목표·범위·AC·화면/계약 초안 없이 구현하면 되돌리기 비용이 커진다.
+- **ATDD-lite RED 선행:** 구현 전에 “무엇이 완료인지”를 실패하는 테스트로 고정해, 완료 선언이 모호해지는 것을 막는다.
+- **생성·검증 분리:** 만든 쪽이 스스로 “검증 완료”를 선언하면 self-bias로 누락을 놓치기 쉽다. `qa-agent`가 산출물·루브릭만으로 판정한다.
+- **소비 증거(횡단 자산):** 패키지/kit를 “만들기만” 하고 제품이 안 쓰면 Gate 3 완료로 보지 않는다.
+
 ## 사용 시점
 - 새로운 화면 추가
 - 새로운 기능 추가
@@ -21,27 +27,19 @@ description: Gate 1 확인 후 구현·검증·문서화; 필요 시 parallel-de
 4. 요구사항이 모호하면 `prd-agent`를 사용해 범위와 정책을 먼저 정리한다.
 5. UI+API가 모두 필요하고 Gate 2를 이미 충족했다면 `parallel-delivery`로 병렬 진행을 우선 고려한다.
 6. **ATDD-lite:** Gate 2 충족 **후**·제품 구현 **전**에 PRD AC를 기준으로 acceptance test 스켈레톤을 **RED**로 둔다. `docs/qa/stage3-entry-checklist.md` §3d·[`docs/qa/atdd-lite.md`](../../../docs/qa/atdd-lite.md). AC ID ↔ 테스트 매핑 필수.
-7. 그 외에는 UI 작업에 `frontend-agent`, API/DB/서비스에 `backend-agent`를 순차·병렬에 맞게 사용한다.
+7. 그 외에는 UI 작업에 `frontend-agent`, API/DB/서비스에 `backend-agent`를 순차·병렬에 맞게 사용한다. UI 작업 시 `20-web-vs-app`·`30-table-pagination`(해당 시)·`40-dark-mode`·`50-index-css-contract`를 읽고 적용한다(`alwaysApply: false`). 분담·Task 호출은 `working-principles` **분담 임계치**(한 턴 Task 기본 ≤2; FE/BE 병렬은 Gate 2 예외)를 따른다.
 8. 디자인 토큰, 테마, 다크모드 일관성이 중요하면 `design-system-agent`를 사용한다.
-9. **생성·검증 분리** 절차를 따른다(아래 섹션). 구현·문서 산출 직후 메인이 self-verify하지 않고 `qa-agent` 독립 검증을 거친 뒤 `verify-change`로 Gate 3를 마무리한다.
+9. **생성·검증 분리**는 [`verify-change`](../verify-change/SKILL.md) **독립 검증 계약**을 따른다. 구현·문서 산출 후 `qa-agent` handoff → `verify-change`로 Gate 3 마무리.
 10. 마지막으로 `docs-agent`를 사용해 변경사항을 정리한다. (Gate 3의 일부)
 11. 공유 패키지·횡단 모듈·kit 연동 범위는 Gate 3 전 [`docs/qa/integration-consumption-gate.md`](../../../docs/qa/integration-consumption-gate.md)의 **소비 증거**를 확인한다(생성-only 완료 금지).
 
 ## 생성·검증 분리
 
-메인(또는 `frontend-agent`/`backend-agent`)이 **생성**하고, **검증**은 `qa-agent`에만 맡긴다. 코드·문서(`docs/` SSOT) 모두 동일 계약을 따른다.
+SSOT: [`verify-change`](../verify-change/SKILL.md) **독립 검증 계약**. 요약만:
 
-1. **산출물 경로 정리** — 변경 파일·모듈 또는 `docs/` 하위 md 목록을 명시한다.
-2. **메인 self-verify 금지** — 「기준 충족」「검증 완료」를 메인이 선언하지 않는다.
-3. **`qa-agent` 필수 호출** — handoff는 [`docs/agent/agent-brief.md`](../../../docs/agent/agent-brief.md) **9) Verifier Handoff** 형식:
-   - `artifactPaths`: 검증 대상 경로만
-   - `acceptanceTestPaths`: (해당 시) acceptance test 경로
-   - `acIds`: (해당 시) PRD AC ID 목록
-   - `rubricRef`: Gate 3·상태 UI·`docs/qa/atdd-lite.md` 또는 `docs/qa/reviewer-gate-rubric.md` 등
-   - `forbidden`: 생성 reasoning·「전반적으로 양호」 완화
-4. **`verify-change`** — `qa-agent` 판정을 인용해 Gate 3·harness를 확인한다. 메인은 판정을 재해석·완화하지 않는다.
+1. 산출물 경로 정리 → 메인 self-verify 금지 → `qa-agent`에 [`agent-brief.md`](../../../docs/agent/agent-brief.md) **9) 고정 블록** handoff → `docs/qa/verify-*.md` 저장(BLOCKER 0) → `verify-change`로 판정 인용 후 Gate 3.
 
-검증 산출 저장 권장: `docs/qa/verify-{날짜 또는 slug}.md`
+검증 산출 저장: `docs/qa/verify-{날짜 또는 slug}.md` (**Gate 3 필수**, 예외는 `AGENTS.md` **직접 처리 가능한 예외**)
 
 ## 출력/보고 형식
 - 사용자 입력은 문장형 지시를 기본으로 해석한다.

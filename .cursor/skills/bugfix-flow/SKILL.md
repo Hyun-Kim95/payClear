@@ -71,7 +71,7 @@ description: 오류 수정, 화면 이상 동작, API 예외, 데이터 처리 �
 
 ### 6) `qa-agent`로 회귀 여부 검토
 
-- **생성·검증 분리:** 수정 산출 경로만 handoff하고 메인 self-verify 금지. handoff: [`docs/agent/agent-brief.md`](../../../docs/agent/agent-brief.md) **9) Verifier Handoff**. 상세: `verify-change` **독립 검증 계약**.
+- **생성·검증 분리:** [`verify-change`](../verify-change/SKILL.md) **독립 검증 계약** (수정 산출 경로만 handoff).
 - 수정된 동작과 인접 기능 중심으로 회귀 위험을 검토한다.
 - 필요 시 최소 검증 시나리오를 추가한다.
 - “무엇을 확인했고 무엇이 남았는지”를 분리해 기록한다.

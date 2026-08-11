@@ -66,7 +66,7 @@ description: 배포 직전 최종 점검 절차를 수행해 누락과 릴리즈
 
 ### 6) 필요 시 qa-agent와 docs-agent 사용
 
-- **생성·검증 분리:** 배포 대상 변경 산출 후 메인 self-verify 금지 → `qa-agent` 독립 검증(handoff: [`docs/agent/agent-brief.md`](../../../docs/agent/agent-brief.md) **9) Verifier Handoff**) → `verify-change`. 상세: `verify-change` **독립 검증 계약**.
+- **생성·검증 분리:** [`verify-change`](../verify-change/SKILL.md) **독립 검증 계약** → `qa-agent` → `verify-change`로 Gate 3·릴리즈 점검.
 - 검증 범위가 넓거나 회귀 위험이 크면 `qa-agent`를 호출해 교차 점검한다.
 - 문서 정리, 릴리즈 노트, 인수인계가 필요하면 `docs-agent`를 호출한다.
 - 병렬 점검 후에는 단일 통합 담당자가 최종 결과를 합쳐 보고한다.

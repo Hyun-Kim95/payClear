@@ -49,21 +49,36 @@ description: 고객사 요구 붙여넣기부터 PRD 승인, 이중 목업, 디�
 
 ## 단계 2 — 이중 목업 (자체 디자인 + Stitch)
 PRD가 확정된 뒤에만 진행한다.
-- 단계 2A/2B는 **기본값으로 병렬·동시 착수**한다. 한 트랙 완료를 기다려 다른 트랙을 시작하지 않는다(예외는 사유 기록 필수).
+
+### 2-0 design-brief (필수 · 하드 스톱)
+`docs/design/design-brief-{slug}.md`가 **완성**되기 전에는 **2A·2B(목업 구현·Stitch 생성)를 시작하지 않는다.**  
+절차·템플릿: 스킬 `design-brief`. Owner: `design-system-agent`.
+
+**완성 기준(모두 충족):**
+- surface 확정
+- 축 5개(`DESIGN_VARIANCE` 등) 각각 **값 + 근거 + 체감 예시 1줄**
+- 시그니처 1~2개
+- 금지(anti-patterns) 체크 반영
+- 안 A/B가 **동일 브리프 경로**를 입력으로 쓸 것임을 표기
+
+미충족 시: 브리프만 보완하고, 목업·Stitch 산출을 만들지 않는다.  
+예외: 사용자가 채팅에서 **「브리프 생략」**을 명시한 경우만. 사유를 브리프 자리 또는 PRD에 한 줄 기록한 뒤에 2A/2B로 진행한다.
+
+- 단계 2A/2B는 브리프 완성(또는 명시 생략) **이후** **기본값으로 병렬·동시 착수**한다. 한 트랙 완료를 기다려 다른 트랙을 시작하지 않는다(예외는 사유 기록 필수).
 
 ### 2A 자체 디자인 트랙
-1. `design-system-agent` 및 `prd-agent`와 정합되는 **자체 UI 방향**(토큰·톤·다크모드)을 잡는다.
+1. 확정된 `design-brief`를 입력으로 `design-system-agent` 및 `prd-agent`와 정합되는 **자체 UI 방향**(토큰·톤·다크모드)을 잡는다.
 2. `frontend-agent`로 **목업 전용 사이트/페이지**를 구현한다. 이 단계 산출물은 **기능 연결 없이 화면 확인만 가능한 정적/프로토타입**이어야 하며, 경로는 프로젝트 규칙에 따른다(예: `/mock-internal`).
 
 ### 2B Stitch 트랙
-1. `docs/design/stitch-sop.md` 순서로 Stitch MCP를 사용해 프로젝트·디자인 시스템·화면을 생성한다.
-2. Stitch 결과를 PRD·Gate 1 화면 스펙과 맞춘다.
+1. **동일** `design-brief`를 입력으로 `docs/design/stitch-sop.md` 순서로 Stitch MCP를 사용해 프로젝트·디자인 시스템·화면을 생성한다.
+2. Stitch 결과를 PRD·Gate 1 화면 스펙·브리프(축·금지·시그니처)와 맞춘다.
 3. 사용자 검토를 위해 **Stitch에서 직접 열 수 있는 접근 정보(워크스페이스/프로젝트/화면 링크 또는 ID)**를 문서에 반드시 남긴다.
 4. HUMAN 중간 컨펌 전에 사용자 계정 기준으로 열람 가능한지(권한/공유 설정) 확인한다.
 
 ### 2C 정합 검증 (루프)
-1. **원본 요구사항 + 확정 PRD** 대비 두 트랙 산출물이 범위·상태(로딩·빈·오류·권한)·플랫폼(웹/앱)에 맞는지 점검한다.
-2. 어긋나면 단계 2A/2B 또는 PRD로 **되돌아가** 수정한다. 맞을 때까지 반복한다.
+1. **원본 요구사항 + 확정 PRD + design-brief** 대비 두 트랙 산출물이 범위·상태(로딩·빈·오류·권한)·플랫폼(웹/앱)·금지 패턴에 맞는지 점검한다.
+2. 어긋나면 단계 2-0(브리프)·2A/2B 또는 PRD로 **되돌아가** 수정한다. 맞을 때까지 반복한다.
 
 ### HUMAN — 중간 컨펌
 3. 두 트랙 결과를 사용자에게 **동시에** 요약·비교해 보여주고, **추가 수정 없이 디자인 선택으로 넘어갈지** 확인한다.
@@ -101,19 +116,19 @@ PRD가 확정된 뒤에만 진행한다.
 
 7. 계약 변경 시 `document-change`로 동기화한다.
 
-8. **기능·요구 일치·DoD**는 단계 4에서 **생성·검증 분리**로 판정한다: 산출물 경로 → `qa-agent` 독립 검증 → `verify-change` Gate 3. 메인 **self-verify 금지**. 단계 3만으로 “완료”를 선언하지 않는다.
+8. **기능·요구 일치·DoD**는 단계 4에서 **생성·검증 분리**로 판정한다 ([`verify-change`](../../../shared/skills/verify-change/SKILL.md) **독립 검증 계약**). 단계 3만으로 “완료”를 선언하지 않는다.
 
 ### 선택 — 완료 루프 하네스(Ralph류 반복)
 
 단계 3 이후(구현·검증·성능 구간)에 **상태 파일 + 훅 경고 + (선택) 테스트 루프**를 쓰려면 `docs/agent/delivery-loop-harness.md`를 따른다.
 
 - **HUMAN·Gate 정의는 변하지 않는다.** PRD 승인·디자인 선택·리뷰어 GATE는 기존 **HUMAN** 규칙이 우선이다.
-- 로컬 상태: `docs/qa/delivery-loop-state.example.json`을 참고해 `.cursor/state/delivery-ralph.json`을 두고, `enabled`를 켠 뒤 `lifecyclePhase`를 `verify` / `perf` / `blocker_loop` 중 하나로 맞춘다.
+- 로컬 상태: `docs/qa/delivery-loop-state.example.json`을 참고해 `.cursor/state/delivery-ralph.json`을 두고, `enabled`를 켠 뒤 `lifecyclePhase`를 `verify` / `perf` / `blocker_loop` 중 하나로 맞춘다. `maxVerifyRounds`(기본 3)·`verifyRound`·초과 시 HUMAN은 [`docs/agent/delivery-loop-harness.md`](../../../docs/agent/delivery-loop-harness.md).
 - 편집 시: `.cursor/hooks/guard-delivery-loop.ps1`가 완료 선언과 체크리스트·증빙 키워드를 대조해 **경고**할 수 있다.
 - 터미널: `scripts/delivery/Invoke-DeliveryLoop.ps1`로 테스트 명령을 상한까지 반복 실행할 수 있다.
 
 ## 단계 4 — 구현 완료 후 PRD 재검증 (루프)
-1. **생성·검증 분리:** 구현·문서 산출 후 메인 self-verify 금지. `artifactPaths`·`rubricRef`·`forbidden`만 [`docs/agent/agent-brief.md`](../../../docs/agent/agent-brief.md) **9) Verifier Handoff**로 `qa-agent`에 넘긴 뒤, `verify-change`로 **확정 PRD**와 구현·문서·API 계약 일치를 검증한다 (Gate 3 / DoD).
+1. **생성·검증 분리:** [`verify-change`](../../../shared/skills/verify-change/SKILL.md) **독립 검증 계약**으로 `qa-agent` handoff 후 **확정 PRD**와 구현·문서·API 계약 일치를 검증한다 (Gate 3 / DoD). 완료 선언 전 `docs/qa/verify-*.md` 저장·**BLOCKER 0** 확인.
 
 2. 불일치면 구현 또는 문서를 수정하고 **다시 단계 4**로 돌아간다.
 
@@ -150,9 +165,11 @@ PRD **측정=예**이고 North Star 퍼널 instrumentation이 범위에 포함�
 
 2. FE·BE 모두 해당하면 `frontend-agent`·`backend-agent`로 **병렬 수정**을 검토한다.
 
-3. 수정 후 **단계 4B(해당 축만)** 또는 **단계 4**부터 다시 점검한다. BLOCKER가 없을 때까지 루프한다.
+3. 수정 후 **단계 4B(해당 축만)** 또는 **단계 4**부터 다시 점검한다. 라운드마다 `docs/qa/verify-*.md`를 갱신하고 **`verifyRound`를 +1** 한다(delivery-ralph 사용 시 JSON에도 반영). 상세: [`docs/agent/delivery-loop-harness.md`](../../../docs/agent/delivery-loop-harness.md).
 
-4. 4B를 수행하지 않았다면 이 단계는 생략한다.
+4. **verify round 상한:** 기본 `maxVerifyRounds: 3`. `verifyRound >= maxVerifyRounds` **이고** BLOCKER가 남으면 추가 수정·재검증을 **자동으로 이어가지 않고 HUMAN**에 맡긴다(범위 축소 / 상한 상향 / 중단). 사용자 명시 후 `verifyRoundExceededHuman=true` 또는 카운터 리셋.
+
+5. 4B를 수행하지 않았다면 이 단계는 생략한다.
 
 ## 단계 4D — 리뷰어 GATE (선택)
 출시 직전 **한 번 더** 품질을 잠글 때 사용한다. 루브릭은 `docs/qa/reviewer-gate-rubric.md`를 따른다.
@@ -188,11 +205,13 @@ PRD **성능 게이트=예**이면 [`docs/performance/README.md`](../../../docs/
 3. 활성 플랫폼 `perf-last.json` `ok: true`(또는 팀 합의)이고 **배포 가능 수준**이면 루프를 종료한다. `perf-last.ok: false`이면 완료 선언하지 않는다(권고, `policy-and-contract.md`).
 
 ## 단계 7 — 작업 완료 처리
-1. `document-change` 또는 `docs-agent`로 완료 요약·영향 범위·알려진 제한·운영 확인 포인트를 정리한다.
+1. `document-change` 또는 `docs-agent`로 완료 요약·영향 범위·알려진 제한·운영 확인 포인트를 정리한다. (`document-change` 출력의 **왜 바꿨는지** 포함)
 
-2. 필요 시 `release-check`를 수행한다.
+2. **(권장)** 되돌리기 비싼 결정(스택·인증·도메인 모델·핵심 UX·대외 API)이 이번 프로젝트에서 확정됐다면 `/kit-wiki`로 `docs/wiki/`에 **결정 (왜)**(배경·대안·근거) 노트 1건을 남긴다. 강제 아님 — [`docs/agent/enforcement-matrix.md`](../../../docs/agent/enforcement-matrix.md) 「권장」.
 
-3. 사용자에게 **완료 보고**를 한다.
+3. 필요 시 `release-check`를 수행한다.
+
+4. 사용자에게 **완료 보고**를 한다.
 
 ---
 
@@ -202,12 +221,13 @@ PRD **성능 게이트=예**이면 [`docs/performance/README.md`](../../../docs/
 |------|-----------------|
 | 요구·PRD | `plan-feature`, `prd-agent` |
 | Stitch | `docs/design/stitch-sop.md`, MCP `user-stitch` |
+| 단계 2-0 브리프(필수) | `design-brief` → `docs/design/design-brief-{slug}.md` — 없으면 2A/2B 금지 |
 | 단계 2 목업(선택 전) | `design-system-agent`, `frontend-agent`(목업 전용 경로만) |
 | 단계 3+ 제품 구현 | `frontend-agent`, `backend-agent`, `parallel-delivery`, `start-feature` |
 | ATDD-lite | [`docs/qa/atdd-lite.md`](../../../docs/qa/atdd-lite.md), `stage3-entry-checklist` §3d |
 | 검증 | `verify-change`, `qa-agent` |
 | 다축 검증·GATE (선택) | 단계 4B~4D, `docs/qa/reviewer-gate-rubric.md` |
-| 문서 | `document-change`, `docs-agent` |
+| 문서 | `document-change`, `docs-agent`, (권장) `kit-wiki` |
 | 측정·분석 (측정=예) | `docs/product-analytics/` |
 | 성능 게이트 (성능 게이트=예) | `docs/performance/` |
 | 보안 게이트 (보안 게이트=예) | `docs/security/` |
@@ -215,6 +235,7 @@ PRD **성능 게이트=예**이면 [`docs/performance/README.md`](../../../docs/
 
 ## 예외
 - 긴급 핫픽스·아주 작은 변경은 `AGENTS.md` **직접 처리 가능한 예외** 섹션에 따라 이 스킬 전체를 생략할 수 있다.
-- Stitch 미사용 시 단계 2B는 생략하고 자체 목업만으로 HUMAN 선택을 진행한다.
+- 단계 2-0 `design-brief` 생략은 사용자 **명시** + 사유 기록일 때만(위 하드 스톱 예외).
+- Stitch 미사용 시 단계 2B는 생략하고 자체 목업만으로 HUMAN 선택을 진행한다. (2-0 브리프는 자체 목업만 할 때도 **필수**, 생략 예외 동일.)
 - 사용자가 **명시적으로** 선택 후 재목업만 요청한 경우에만 2A/2B와 유사한 산출을 허용하며, 예외 사유를 문서에 남긴다.
 - 단계 4B~4D는 **선택**이다. 사용자가 “다축 검증·리뷰어 GATE 생략”을 명시하면 단계 4 직후 **단계 5**로 넘어간다.

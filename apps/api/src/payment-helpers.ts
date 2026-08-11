@@ -342,7 +342,33 @@ export async function allocateContactPayment(
   }
 }
 
-export function mapContactRow(row: Record<string, unknown>) {
+export type ContactBalanceDebt = {
+  contact_id: string
+  status: string
+  is_split: boolean
+  balance: number
+  direction: DebtDirection
+}
+
+/** 상대 상세·목록 공통: active · 양수 잔액 · 비분할만 합산 */
+export function aggregateContactBalances(
+  debts: ContactBalanceDebt[],
+): Map<string, { total_receivable: number; total_payable: number }> {
+  const map = new Map<string, { total_receivable: number; total_payable: number }>()
+  for (const d of debts) {
+    if (d.status !== 'active' || d.is_split || d.balance <= 0) continue
+    const cur = map.get(d.contact_id) ?? { total_receivable: 0, total_payable: 0 }
+    if (d.direction === 'lent') cur.total_receivable += d.balance
+    else cur.total_payable += d.balance
+    map.set(d.contact_id, cur)
+  }
+  return map
+}
+
+export function mapContactRow(
+  row: Record<string, unknown>,
+  balances?: { total_receivable: number; total_payable: number },
+) {
   const scheduleType = (row.due_schedule_type as DueScheduleType) ?? 'none'
   const scheduleValue =
     row.due_schedule_value == null ? null : Number(row.due_schedule_value)
@@ -354,5 +380,7 @@ export function mapContactRow(row: Record<string, unknown>) {
     due_schedule_type: scheduleType,
     due_schedule_value: scheduleValue,
     due_schedule_label: formatDueScheduleLabel(scheduleType, scheduleValue),
+    total_receivable: balances?.total_receivable ?? 0,
+    total_payable: balances?.total_payable ?? 0,
   }
 }

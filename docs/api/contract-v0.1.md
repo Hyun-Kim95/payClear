@@ -70,10 +70,18 @@ Gate 2에서 OpenAPI 3 YAML로 승격합니다.
   "id": "uuid",
   "display_name": "string",
   "note": "string | null",
+  "payment_strategy": "oldest_first | newest_first | largest_first | smallest_first",
+  "due_schedule_type": "none | monthly | weekly",
+  "due_schedule_value": "number | null",
+  "due_schedule_label": "string | null",
+  "total_receivable": 0,
+  "total_payable": 0,
   "created_at": "ISO8601",
   "updated_at": "ISO8601"
 }
 ```
+
+- `total_receivable` / `total_payable`: 연결 채무 중 **active · 잔액 > 0 · 비분할**만 합산. `lent`→받을 돈, `borrowed`→갚을 돈. 상대 상세 소계와 동일 규칙.
 
 ### 2.2 Debt
 
@@ -173,7 +181,7 @@ Gate 2에서 OpenAPI 3 YAML로 승격합니다.
 
 | Method | Path | 설명 |
 |--------|------|------|
-| GET | `/contacts` | 목록 |
+| GET | `/contacts` | 목록. 각 항목에 `total_receivable` / `total_payable` 포함 |
 | POST | `/contacts` | 생성 `{ display_name, note? }` |
 | GET | `/contacts/:id` | 상세 + 연결 `debts[]` 요약(방향·잔액·상태). **S6** 상대별 모음 |
 | PATCH | `/contacts/:id` | 수정 |

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
-import { api, isUnauthorizedError } from '../api/client'
+import { api, formatKRW, isUnauthorizedError, type Contact } from '../api/client'
 
 export function ContactsPage() {
-  const [items, setItems] = useState<Array<{ id: string; display_name: string }>>([])
+  const [items, setItems] = useState<Contact[]>([])
   const [loading, setLoading] = useState(true)
   const [authExpired, setAuthExpired] = useState(false)
 
@@ -26,11 +26,19 @@ export function ContactsPage() {
       {items.length === 0 ? (
         <p className="muted">등록된 상대가 없습니다.</p>
       ) : (
-        items.map((c) => (
-          <Link key={c.id} to={`/contacts/${c.id}`} className="list-row">
-            <span>{c.display_name}</span>
-          </Link>
-        ))
+        items.map((c) => {
+          const receivable = c.total_receivable ?? 0
+          const payable = c.total_payable ?? 0
+          return (
+            <Link key={c.id} to={`/contacts/${c.id}`} className="list-row">
+              <span>{c.display_name}</span>
+              <span className="list-row__meta muted">
+                <span>받을 돈 {formatKRW(receivable)}</span>
+                <span>갚을 돈 {formatKRW(payable)}</span>
+              </span>
+            </Link>
+          )
+        })
       )}
     </div>
   )

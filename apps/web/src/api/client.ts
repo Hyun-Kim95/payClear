@@ -228,6 +228,10 @@ export interface Contact {
   due_schedule_type?: DueScheduleType
   due_schedule_value?: number | null
   due_schedule_label?: string | null
+  /** active·양수·비분할 lent 합 (목록/상세) */
+  total_receivable?: number
+  /** active·양수·비분할 borrowed 합 (목록/상세) */
+  total_payable?: number
 }
 
 export interface ContactDetail extends Contact {
