@@ -14,6 +14,7 @@ import {
   CONTACT_PAYMENT_COPY,
   sumContactBalanceByDirection,
 } from '../utils/contactPayment'
+import { DEBT_SORT_OPTIONS, sortDebts, type DebtSortOption } from '../utils/debtSort'
 
 type PaymentResult = {
   allocated_total: number
@@ -36,6 +37,7 @@ export function ContactDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [sort, setSort] = useState<DebtSortOption>('date_desc')
 
   const load = () => {
     if (!id) return
@@ -72,6 +74,11 @@ export function ContactDetailPage() {
   const { totalReceivable, totalPayable } = useMemo(() => {
     return { totalReceivable: receivableBalance, totalPayable: payableBalance }
   }, [receivableBalance, payableBalance])
+
+  const sortedDebts = useMemo(() => {
+    if (!contact) return []
+    return sortDebts(contact.debts, sort)
+  }, [contact, sort])
 
   const save = async () => {
     if (!id) return
@@ -292,14 +299,31 @@ export function ContactDetailPage() {
       {contact.debts.length === 0 ? (
         <p className="muted">채무가 없습니다.</p>
       ) : (
-        contact.debts.map((d) => (
-          <Link key={d.id} to={`/debts/${d.id}`} className="list-row">
-            <span>
-              {d.direction === 'lent' ? '빌려줌' : '빌림'} · {d.reason}
-            </span>
-            <span>{formatKRW(d.balance)}</span>
-          </Link>
-        ))
+        <>
+          <label className="sort-bar field">
+            <span>정렬</span>
+            <select
+              className="input"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as DebtSortOption)}
+              aria-label="연결된 채무 정렬"
+            >
+              {DEBT_SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {sortedDebts.map((d) => (
+            <Link key={d.id} to={`/debts/${d.id}`} className="list-row">
+              <span>
+                {d.direction === 'lent' ? '빌려줌' : '빌림'} · {d.reason}
+              </span>
+              <span>{formatKRW(d.balance)}</span>
+            </Link>
+          ))}
+        </>
       )}
       {error && !editing && <p className="form-error">{error}</p>}
     </div>

@@ -2,38 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { api, isUnauthorizedError, type Debt } from '../api/client'
 import { DebtCard } from '../components/DebtCard'
+import { DEBT_SORT_OPTIONS, sortDebts, type DebtSortOption } from '../utils/debtSort'
 
 const FILTERS = ['전체', '빌려줌', '빌림', '진행중', '완료', '연체'] as const
 const MAX_SUGGESTIONS = 8
-
-type SortOption = 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc'
-
-const SORT_OPTIONS: { value: SortOption; label: string }[] = [
-  { value: 'date_desc', label: '날짜 최신순' },
-  { value: 'date_asc', label: '날짜 오래된순' },
-  { value: 'amount_desc', label: '금액 높은순' },
-  { value: 'amount_asc', label: '금액 낮은순' },
-]
-
-function sortDebts(items: Debt[], sort: SortOption): Debt[] {
-  const sorted = [...items]
-  switch (sort) {
-    case 'date_desc':
-      return sorted.sort((a, b) => b.occurred_on.localeCompare(a.occurred_on))
-    case 'date_asc':
-      return sorted.sort((a, b) => a.occurred_on.localeCompare(b.occurred_on))
-    case 'amount_desc':
-      return sorted.sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
-    case 'amount_asc':
-      return sorted.sort((a, b) => Math.abs(a.balance) - Math.abs(b.balance))
-  }
-}
 
 export function DebtsPage() {
   const [items, setItems] = useState<Debt[]>([])
   const [contacts, setContacts] = useState<Array<{ id: string; display_name: string }>>([])
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('전체')
-  const [sort, setSort] = useState<SortOption>('date_desc')
+  const [sort, setSort] = useState<DebtSortOption>('date_desc')
   const [q, setQ] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -155,8 +133,12 @@ export function DebtsPage() {
       </div>
       <label className="sort-bar field">
         <span>정렬</span>
-        <select className="input" value={sort} onChange={(e) => setSort(e.target.value as SortOption)}>
-          {SORT_OPTIONS.map((o) => (
+        <select
+          className="input"
+          value={sort}
+          onChange={(e) => setSort(e.target.value as DebtSortOption)}
+        >
+          {DEBT_SORT_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
