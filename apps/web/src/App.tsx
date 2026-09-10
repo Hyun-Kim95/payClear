@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useState } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { getToken, isNativePlatform, setPinRequiredHandler, setUnauthorizedHandler } from './api/client'
 import { Layout } from './components/Layout'
+import { BackExitHint, useHardwareBackButton } from './hooks/useHardwareBackButton'
 import { LockProvider } from './lock/LockProvider'
 import { SESSION_LOCK_KEY } from './lock/session-keys'
 import { LoginPage } from './pages/Login'
@@ -120,6 +121,7 @@ export default function App() {
     const saved = localStorage.getItem('payclear-theme')
     return saved === 'dark' ? 'dark' : 'light'
   })
+  const showExitHint = useHardwareBackButton()
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -132,6 +134,7 @@ export default function App() {
 
   return (
     <LockProvider>
+      <BackExitHint visible={showExitHint} />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/privacy" element={<LegalPrivacyPage />} />

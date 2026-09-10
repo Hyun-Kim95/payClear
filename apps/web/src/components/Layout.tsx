@@ -107,7 +107,7 @@ export function Layout({ onToggleTheme, theme }: { onToggleTheme: () => void; th
   return (
     <div className="shell">
       <header className="topbar">
-        <Link to="/" className="brand">
+        <Link to="/" replace className="brand">
           payClear
         </Link>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -130,6 +130,7 @@ export function Layout({ onToggleTheme, theme }: { onToggleTheme: () => void; th
           <Link
             key={n.to}
             to={n.to}
+            replace
             className={
               pathname === n.to || (n.to !== '/' && pathname.startsWith(n.to)) ? 'active' : ''
             }

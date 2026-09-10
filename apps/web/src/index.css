@@ -478,6 +478,29 @@ button, input { font: inherit; }
   text-align: center;
 }
 
+.back-exit-hint {
+  position: fixed;
+  left: 50%;
+  bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 40;
+  max-width: calc(100% - 2rem);
+  padding: 0.625rem 1rem;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.88);
+  color: #fff;
+  font-size: 0.875rem;
+  line-height: 1.3;
+  text-align: center;
+  pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme='dark'] .back-exit-hint {
+  background: rgba(241, 245, 249, 0.92);
+  color: #0f172a;
+}
+
 .auth-wrap {
   min-height: 100vh;
   display: grid;
