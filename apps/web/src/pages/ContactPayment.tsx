@@ -95,6 +95,7 @@ export function ContactPaymentPage() {
       })
       await api.updateContact(id, { payment_strategy: strategy })
       navigate(`/contacts/${id}`, {
+        replace: true,
         state: {
           paymentResult: result,
         },

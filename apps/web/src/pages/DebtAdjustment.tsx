@@ -46,7 +46,7 @@ export function DebtAdjustmentPage() {
         occurred_on: occurredOn,
         note: note.trim(),
       })
-      navigate(`/debts/${id}`)
+      navigate(`/debts/${id}`, { replace: true })
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message)

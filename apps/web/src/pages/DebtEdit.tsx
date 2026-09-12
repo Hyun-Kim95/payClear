@@ -54,7 +54,7 @@ export function DebtEditPage() {
         due_on: dueOn || null,
         updated_at: debt.updated_at,
       })
-      navigate(`/debts/${id}`)
+      navigate(`/debts/${id}`, { replace: true })
     } catch (err) {
       if (isVersionConflictError(err)) {
         setVersionConflict(true)

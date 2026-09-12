@@ -12,39 +12,78 @@ function isTabRoot(pathname: string): boolean {
 }
 
 /**
- * 상세·하위 화면의 부모 탭. history가 비어 있을 때 fallback으로 쓴다.
+ * 화면 「←」 버튼과 맞춘 한 단계 위 경로.
+ * history.back() 대신 쓰면 홈→상세에서 하드웨어 뒤로가기가 홈으로 가는 어색함을 줄인다.
  */
-function parentPath(pathname: string): string | null {
+function structuralBack(pathname: string): string | null {
   if (pathname.startsWith('/settings/')) return '/settings'
-  if (pathname.startsWith('/debts/')) return '/debts'
-  if (pathname.startsWith('/contacts/')) return '/contacts'
+  if (pathname === '/debts/new') return '/debts'
+
+  const debtChild = pathname.match(/^\/debts\/([^/]+)\/(payment|adjustment|edit|share)$/)
+  if (debtChild) return `/debts/${debtChild[1]}`
+
+  if (/^\/debts\/[^/]+$/.test(pathname)) return '/debts'
+
+  const contactPay = pathname.match(/^\/contacts\/([^/]+)\/payment$/)
+  if (contactPay) return `/contacts/${contactPay[1]}`
+
+  if (/^\/contacts\/[^/]+$/.test(pathname) && pathname !== '/contacts/new') return '/contacts'
+
   return null
 }
 
 /**
  * Android 하드웨어 뒤로가기.
  * - 탭 루트(홈·채무·상대·설정): 2초 안에 두 번 누르면 종료
- * - 그 외(상세·설정 하위 등): 이전 화면으로
+ * - 상세·하위 화면: 화면 「←」와 같은 상위 경로로 (history.back 대신)
  * 웹 브라우저에서는 동작하지 않는다.
  */
 export function useHardwareBackButton() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const lastBackAt = useRef(0)
-  const [hint, setHint] = useState(false)
+  const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const navigateRef = useRef(navigate)
   const pathnameRef = useRef(pathname)
+  const [hint, setHint] = useState(false)
+
+  navigateRef.current = navigate
   pathnameRef.current = pathname
+
+  function clearHintTimer() {
+    if (hintTimerRef.current != null) {
+      clearTimeout(hintTimerRef.current)
+      hintTimerRef.current = null
+    }
+  }
+
+  function hideHint() {
+    clearHintTimer()
+    setHint(false)
+  }
+
+  // 화면이 바뀌면 종료 안내를 즉시 닫는다.
+  useEffect(() => {
+    lastBackAt.current = 0
+    hideHint()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pathname 변경 시에만
+  }, [pathname])
 
   useEffect(() => {
     if (!isNativePlatform()) return
 
+    let cancelled = false
     let removeListener: (() => void) | undefined
-    let hintTimer: ReturnType<typeof setTimeout> | undefined
 
     void (async () => {
       const { App: CapApp } = await import('@capacitor/app')
+      if (cancelled) return
+
       const handle = await CapApp.addListener('backButton', ({ canGoBack }) => {
+        if (cancelled) return
+
         const path = pathnameRef.current
+        const go = navigateRef.current
 
         // 확인 모달이 열려 있으면 화면 이탈 대신 모달만 닫는다.
         const dialog = document.querySelector('.modal-backdrop [role="dialog"]')
@@ -71,7 +110,7 @@ export function useHardwareBackButton() {
           path.startsWith('/s/')
         ) {
           if (canGoBack) {
-            navigate(-1)
+            go(-1)
             return
           }
           void CapApp.exitApp()
@@ -82,28 +121,42 @@ export function useHardwareBackButton() {
           const now = Date.now()
           if (now - lastBackAt.current < EXIT_HINT_MS) {
             lastBackAt.current = 0
-            setHint(false)
+            hideHint()
             void CapApp.exitApp()
             return
           }
           lastBackAt.current = now
           setHint(true)
-          if (hintTimer) clearTimeout(hintTimer)
-          hintTimer = setTimeout(() => setHint(false), EXIT_HINT_MS)
+          clearHintTimer()
+          hintTimerRef.current = setTimeout(() => {
+            hintTimerRef.current = null
+            lastBackAt.current = 0
+            setHint(false)
+          }, EXIT_HINT_MS)
           return
         }
 
         lastBackAt.current = 0
-        setHint(false)
+        hideHint()
 
-        if (canGoBack) {
-          navigate(-1)
+        const up = structuralBack(path)
+        if (up) {
+          go(up, { replace: true })
           return
         }
 
-        const parent = parentPath(path)
-        navigate(parent ?? '/', { replace: true })
+        if (canGoBack) {
+          go(-1)
+          return
+        }
+
+        go('/', { replace: true })
       })
+
+      if (cancelled) {
+        void handle.remove()
+        return
+      }
 
       removeListener = () => {
         void handle.remove()
@@ -111,10 +164,15 @@ export function useHardwareBackButton() {
     })()
 
     return () => {
+      cancelled = true
       removeListener?.()
-      if (hintTimer) clearTimeout(hintTimer)
+      if (hintTimerRef.current != null) {
+        clearTimeout(hintTimerRef.current)
+        hintTimerRef.current = null
+      }
+      setHint(false)
     }
-  }, [navigate])
+  }, [])
 
   return hint
 }

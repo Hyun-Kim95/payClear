@@ -131,7 +131,7 @@ export function ContactDetailPage() {
     if (!id || !confirm('이 상대를 삭제할까요?')) return
     try {
       await api.deleteContact(id)
-      navigate('/contacts')
+      navigate('/contacts', { replace: true })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '삭제 실패')
     }

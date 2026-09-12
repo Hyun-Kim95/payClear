@@ -37,7 +37,7 @@ export function DebtNewPage() {
         reason: reason.trim(),
         due_on: dueOn || null,
       })
-      navigate(`/debts/${debt.id}`)
+      navigate(`/debts/${debt.id}`, { replace: true })
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message)

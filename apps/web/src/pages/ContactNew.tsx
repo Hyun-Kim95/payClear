@@ -15,7 +15,7 @@ export function ContactNewPage() {
     setError(null)
     try {
       const c = await api.createContact(name.trim(), note.trim() || undefined)
-      navigate(`/contacts/${c.id}`)
+      navigate(`/contacts/${c.id}`, { replace: true })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '등록에 실패했습니다.')
     } finally {
